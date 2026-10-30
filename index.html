@@ -51,7 +51,7 @@ h2 { font-family: var(--display); font-weight: 400; font-size: 1.15rem; margin: 
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--key); }
 .btn:disabled { opacity: .5; cursor: default; }
 input[type=text] {
-  font: 1.2rem var(--display); letter-spacing: .25em; text-transform: uppercase;
+  font: 1.2rem var(--display); letter-spacing: .25em;
   width: 8.5em; padding: 7px 10px; border: 2px solid var(--line); background: var(--key); color: var(--ink);
 }
 .msg { min-height: 1.6em; margin: 0; font-size: .9rem; color: var(--muted); }
@@ -109,7 +109,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
         <h2>部屋に入る</h2>
         <div class="row">
           <label for="code-in" class="label">部屋コード</label>
-          <input type="text" id="code-in" maxlength="4" autocomplete="off" placeholder="ABCD">
+          <input type="text" id="code-in" maxlength="4" autocomplete="off" inputmode="numeric" pattern="[0-9]*" placeholder="1234">
           <button class="btn" id="join">入る</button>
         </div>
       </div>
@@ -156,7 +156,7 @@ const SLOT_COLORS = ['#e8c547', '#e0644f', '#5aa9e6', '#9b6be0'];   // P1..P4 ta
 const FW = 20, FH = 32, ROWS = { down: 0, left: 1, right: 2, up: 3 };
 const W = 320, H = 192, TILE = 16, MAX = 4;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_CHARS = '0123456789';
 const SEND_MS = 66, TIMEOUT_MS = 6000;
 
 const $ = id => document.getElementById(id);
@@ -187,7 +187,7 @@ document.querySelectorAll('.card').forEach(b => b.addEventListener('click', () =
   try { localStorage.setItem('chara', String(me.c)); } catch (e) {}
   show('lobby'); lobbyMsg('');
   const q = new URLSearchParams(location.search).get('room');
-  if (q) { $('code-in').value = q.toUpperCase().slice(0, 4); $('join').focus(); }
+  if (q) { $('code-in').value = q.replace(/\D/g, '').slice(0, 4); $('join').focus(); }
 }));
 $('back').addEventListener('click', () => show('select'));
 
@@ -215,7 +215,7 @@ function createRoom(tries) {
     enterPlay();
   });
   p.on('error', err => {
-    if (err.type === 'unavailable-id' && tries < 3) { p.destroy(); createRoom(tries + 1); return; }
+    if (err.type === 'unavailable-id' && tries < 8) { p.destroy(); createRoom(tries + 1); return; }
     if (peer === p) { console.warn('peer error (room kept)', err.type); return; }   // already hosting: keep the room, 'disconnected' reconnects
     p.destroy(); busy(false); lobbyMsg(errorText(err.type), true);
   });
@@ -225,8 +225,8 @@ function createRoom(tries) {
 $('join').addEventListener('click', joinRoom);
 $('code-in').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
 function joinRoom() {
-  const code = $('code-in').value.trim().toUpperCase();
-  if (!/^[A-Z0-9]{4}$/.test(code)) { lobbyMsg('部屋コードは4文字です。', true); return; }
+  const code = $('code-in').value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '');
+  if (!/^\d{4}$/.test(code)) { lobbyMsg('部屋コードは4桁の数字です。', true); return; }
   busy(true); lobbyMsg('部屋に入っています…');
   const p = new Peer();
   let giveUp = 0;
