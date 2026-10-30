@@ -20,7 +20,7 @@
 | ファイル | 内容 |
 |---|---|
 | `shibata_walk.png` | 柴田さん 歩行シート |
-| `chara2_walk.png` | chara2 歩行シート |
+| `cyber_walk.png` | サイバー 歩行シート |
 | `*_walk.json` | コマ割り・アニメーション定義 |
 
 - 1コマ 20×32px、背景透過
