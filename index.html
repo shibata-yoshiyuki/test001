@@ -1,0 +1,229 @@
+<title>ドット歩行テスト</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+1p:wght@400;700&display=swap">
+<style>
+/* Layout: one game screen on top, controls under it; stacks naturally on phones */
+:root {
+  --bg: #e9ecef;
+  --panel: #f7f8fa;
+  --ink: #1f2429;
+  --muted: #5d6670;
+  --line: #c9cfd6;
+  --accent: #3b82a6;
+  --key: #ffffff;
+  --display: "DotGothic16", "M PLUS 1p", system-ui, sans-serif;
+  --body: "M PLUS 1p", "Hiragino Sans", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191d; --panel: #1d2329; --ink: #e6eaee; --muted: #9aa4ae;
+    --line: #333c45; --accent: #6fb6d6; --key: #262e35; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191d; --panel: #1d2329; --ink: #e6eaee; --muted: #9aa4ae;
+  --line: #333c45; --accent: #6fb6d6; --key: #262e35; color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--ink); }
+body {
+  font-family: var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-family: var(--display); font-weight: 400; font-size: 1.6rem; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+.sub { margin: 0; color: var(--muted); font-size: .9rem; }
+.stage {
+  position: relative; width: 100%; max-width: 100%;
+  border: 3px solid var(--ink); background: #3d5a3a;
+  image-rendering: pixelated;
+}
+canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; touch-action: none; }
+.controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; justify-content: space-between; }
+.who { display: grid; gap: 8px; min-width: 0; }
+.label { font-size: .75rem; letter-spacing: .08em; color: var(--muted); }
+.pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.pick button {
+  font: 700 .95rem var(--body); color: var(--ink); background: var(--key);
+  border: 2px solid var(--line); padding: 8px 14px; cursor: pointer;
+}
+.pick button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+.keys { font-size: .9rem; color: var(--muted); line-height: 1.7; }
+kbd {
+  font-family: var(--display); font-size: .85rem; color: var(--ink);
+  background: var(--key); border: 1px solid var(--line); border-bottom-width: 3px;
+  padding: 0 6px;
+}
+.pad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 4px; user-select: none; -webkit-user-select: none; }
+.pad button {
+  font: 1.2rem var(--display); color: var(--ink); background: var(--key);
+  border: 2px solid var(--line); cursor: pointer; touch-action: none;
+}
+.pad button.on { background: var(--accent); color: var(--key); border-color: var(--accent); }
+.pad .u { grid-column: 2; grid-row: 1; } .pad .l { grid-column: 1; grid-row: 2; }
+.pad .r { grid-column: 3; grid-row: 2; } .pad .d { grid-column: 2; grid-row: 3; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+h2 { font-family: var(--display); font-weight: 400; font-size: 1.15rem; margin: 0 0 12px; }
+.select { border: 3px solid var(--ink); background: var(--panel); padding: 20px; }
+.cards { display: flex; flex-wrap: wrap; gap: 14px; }
+.card {
+  display: grid; justify-items: center; gap: 8px; cursor: pointer;
+  background: var(--key); border: 2px solid var(--line); padding: 14px 22px 12px;
+  font: 700 1rem var(--body); color: var(--ink);
+}
+.card:hover, .card.last { border-color: var(--accent); }
+.card canvas { width: 80px; height: 128px; image-rendering: pixelated; background: #46663f; }
+.now { font-family: var(--display); font-weight: 400; font-size: 1.3rem; }
+.change {
+  justify-self: start; font: .9rem var(--body); color: var(--accent); background: none;
+  border: 0; padding: 0; text-decoration: underline; cursor: pointer;
+}
+.speed { display: flex; gap: 8px; align-items: center; font-size: .9rem; }
+</style>
+
+<div class="wrap">
+  <div>
+    <h1>ドット歩行テスト</h1>
+    <p class="sub">キャラを選ぶと、そのキャラで歩き回れます。</p>
+  </div>
+
+  <section id="select" class="select" aria-labelledby="select-h">
+    <h2 id="select-h">使うキャラを選んでください</h2>
+    <div class="cards">
+      <button class="card" id="pick-0" data-i="0"><canvas width="20" height="32"></canvas><span>柴田さん</span></button>
+      <button class="card" id="pick-1" data-i="1"><canvas width="20" height="32"></canvas><span>chara2</span></button>
+    </div>
+  </section>
+
+  <section id="play" hidden>
+    <div class="stage"><canvas id="game" width="320" height="192"></canvas></div>
+    <div class="controls">
+      <div class="who">
+        <span class="label">操作中のキャラ</span>
+        <strong id="now" class="now"></strong>
+        <div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> または <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> で移動</div>
+        <label class="speed"><input type="checkbox" id="run"> 走る（2倍速）</label>
+        <button id="change" class="change">キャラを選び直す</button>
+      </div>
+      <div class="pad" aria-label="十字ボタン">
+        <button class="u" data-dir="up" aria-label="上">▲</button>
+        <button class="l" data-dir="left" aria-label="左">◀</button>
+        <button class="r" data-dir="right" aria-label="右">▶</button>
+        <button class="d" data-dir="down" aria-label="下">▼</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const SHEETS = [
+  'data:image/png;base64,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',
+  'data:image/png;base64,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',
+];
+const FW = 20, FH = 32, ROWS = { down: 0, left: 1, right: 2, up: 3 };
+const W = 320, H = 192, TILE = 16;
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const NAMES = ['柴田さん', 'chara2'];
+const imgs = SHEETS.map(src => { const im = new Image(); im.src = src; return im; });
+const me = { i: 0, x: 160, y: 120, dir: 'down', t: 0, moving: false, held: new Set() };
+let playing = false;
+
+// animated walk previews on the select cards
+const cardCtx = [0, 1].map(i => {
+  const c = document.querySelector('#pick-' + i + ' canvas').getContext('2d');
+  c.imageSmoothingEnabled = false; return c;
+});
+const selectEl = document.getElementById('select'), playEl = document.getElementById('play');
+function choose(i) {
+  me.i = i; me.x = 160; me.y = 120; me.dir = 'down'; me.held.clear();
+  document.getElementById('now').textContent = NAMES[i];
+  selectEl.hidden = true; playEl.hidden = false; playing = true;
+  try { localStorage.setItem('chara', String(i)); } catch (e) {}
+}
+document.querySelectorAll('.card').forEach(b => b.addEventListener('click', () => choose(+b.dataset.i)));
+document.getElementById('change').addEventListener('click', () => {
+  playing = false; me.held.clear(); playEl.hidden = true; selectEl.hidden = false;
+  document.getElementById('pick-' + me.i).focus();
+});
+
+// floor: a fixed pseudo-random tile pattern
+const floor = document.createElement('canvas');
+floor.width = W; floor.height = H;
+(() => {
+  const f = floor.getContext('2d');
+  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let ty = 0; ty < H / TILE; ty++) for (let tx = 0; tx < W / TILE; tx++) {
+    f.fillStyle = (tx + ty) % 2 ? '#4a6b45' : '#46663f';
+    f.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+    for (let k = 0; k < 3; k++) {
+      f.fillStyle = rnd() > .5 ? '#55794f' : '#3d5a3a';
+      f.fillRect(tx * TILE + (rnd() * 14 | 0), ty * TILE + (rnd() * 14 | 0), 2, 1);
+    }
+  }
+  f.fillStyle = '#8b7d62';
+  for (let tx = 0; tx < W / TILE; tx++) f.fillRect(tx * TILE, 0, TILE - 1, 12);
+})();
+
+const KEYMAP = {
+  KeyW: 'up', KeyA: 'left', KeyS: 'down', KeyD: 'right',
+  ArrowUp: 'up', ArrowLeft: 'left', ArrowDown: 'down', ArrowRight: 'right',
+};
+addEventListener('keydown', e => {
+  const d = KEYMAP[e.code]; if (!d || !playing) return;
+  e.preventDefault(); me.held.delete(d); me.held.add(d);
+});
+addEventListener('keyup', e => { const d = KEYMAP[e.code]; if (d) me.held.delete(d); });
+addEventListener('blur', () => me.held.clear());
+
+document.querySelectorAll('.pad button').forEach(b => {
+  const d = b.dataset.dir;
+  const on = e => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); b.classList.add('on'); me.held.delete(d); me.held.add(d); };
+  const off = () => { b.classList.remove('on'); me.held.delete(d); };
+  b.addEventListener('pointerdown', on);
+  b.addEventListener('pointerup', off);
+  b.addEventListener('pointercancel', off);
+  b.addEventListener('lostpointercapture', off);
+});
+const runBox = document.getElementById('run');
+
+const VEC = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+let last = performance.now();
+try { const saved = localStorage.getItem('chara'); if (saved !== null) document.getElementById('pick-' + saved)?.classList.add('last'); } catch (e) {}
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const speed = runBox.checked ? 96 : 48;
+  const p = me;
+  let vx = 0, vy = 0;
+  for (const d of p.held) { vx += VEC[d][0]; vy += VEC[d][1]; }
+  p.moving = playing && (vx !== 0 || vy !== 0);
+  if (p.moving) {
+    p.dir = [...p.held].pop();
+    const n = Math.hypot(vx, vy);
+    p.x = Math.max(FW / 2, Math.min(W - FW / 2, p.x + vx / n * speed * dt));
+    p.y = Math.max(28, Math.min(H - 2, p.y + vy / n * speed * dt));
+    p.t += dt * (runBox.checked ? 12 : 8);
+  } else p.t = 0;
+
+  if (playing) {
+    ctx.drawImage(floor, 0, 0);
+    const f = p.moving ? Math.floor(p.t) % 4 : 0;
+    const dx = Math.round(p.x - FW / 2), dy = Math.round(p.y - FH);
+    ctx.fillStyle = 'rgba(0,0,0,.22)';
+    ctx.fillRect(dx + 5, dy + FH - 2, 10, 2); ctx.fillRect(dx + 4, dy + FH - 1, 12, 1);
+    if (imgs[p.i].complete) ctx.drawImage(imgs[p.i], f * FW, ROWS[p.dir] * FH, FW, FH, dx, dy, FW, FH);
+  } else {
+    const f = Math.floor(now / 125) % 4;
+    cardCtx.forEach((c, i) => {
+      c.clearRect(0, 0, FW, FH);
+      if (imgs[i].complete) c.drawImage(imgs[i], f * FW, 0, FW, FH, 0, 0, FW, FH);
+    });
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
