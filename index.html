@@ -132,7 +132,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
         <div class="side">
           <span class="label">参加者 <span id="count"></span></span>
           <ul class="plist" id="plist"></ul>
-          <div class="sub"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> で移動</div>
+          <div class="sub">画面をタップ（クリック）するとその場所へ移動。<br>押したまま上下左右にずらすと、その方向へ移動。<br><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> と十字ボタンでも動けます。</div>
           <label class="sub"><input type="checkbox" id="run"> 走る（2倍速）</label>
           <button class="link" id="leave">部屋から出る</button>
         </div>
@@ -315,7 +315,7 @@ function enterPlay() {
 function endRoom(msg) {
   const p = peer;
   peer = null; hostConn = null; isHost = false;
-  conns.clear(); others = new Map(); me.held.clear();
+  conns.clear(); others = new Map(); me.held.clear(); target = null; stick = null; ptr = null;
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   busy(false); show('lobby'); lobbyMsg(msg || '', !!msg);
@@ -358,8 +358,48 @@ document.querySelectorAll('.pad button').forEach(b => {
   b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
 });
 
-// ---------- 3. play: render ----------
+// tap = walk to that spot / press and slide = virtual stick (mouse and touch)
 const cv = $('game'), ctx = cv.getContext('2d');
+const TAP_MS = 350, DRAG_PX = 12, DEAD_PX = 6, STICK_R = 14;
+let ptr = null;        // active pointer on the stage
+let target = null;     // {x, y} in game pixels
+let stick = null;      // {ox, oy, vx, vy, kx, ky} in game pixels
+function toGame(e) {
+  const r = cv.getBoundingClientRect(), k = W / r.width;
+  return { x: (e.clientX - r.left) * k, y: (e.clientY - r.top) * k, k };
+}
+cv.addEventListener('pointerdown', e => {
+  if (screen !== 'play' || ptr || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault(); cv.setPointerCapture?.(e.pointerId);
+  ptr = { id: e.pointerId, sx: e.clientX, sy: e.clientY, t0: performance.now(), drag: false };
+});
+cv.addEventListener('pointermove', e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const ddx = e.clientX - ptr.sx, ddy = e.clientY - ptr.sy, len = Math.hypot(ddx, ddy);
+  if (!ptr.drag && len > DRAG_PX) { ptr.drag = true; target = null; }
+  if (!ptr.drag) return;
+  const g0 = toGame({ clientX: ptr.sx, clientY: ptr.sy }), kk = Math.min(len * g0.k, STICK_R) / (len || 1);
+  stick = {
+    ox: g0.x, oy: g0.y,
+    vx: len > DEAD_PX ? ddx / len : 0, vy: len > DEAD_PX ? ddy / len : 0,
+    kx: g0.x + ddx * kk, ky: g0.y + ddy * kk,
+  };
+});
+function endPointer(e, tapAllowed) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  if (tapAllowed && !ptr.drag && performance.now() - ptr.t0 < TAP_MS) {
+    const g = toGame(e);
+    target = { x: Math.max(FW / 2, Math.min(W - FW / 2, g.x)), y: Math.max(28, Math.min(H - 2, g.y)) };
+  }
+  ptr = null; stick = null;
+}
+cv.addEventListener('pointerup', e => endPointer(e, true));
+cv.addEventListener('pointercancel', e => endPointer(e, false));
+cv.addEventListener('lostpointercapture', e => endPointer(e, false));
+cv.addEventListener('contextmenu', e => e.preventDefault());
+function faceOf(vx, vy) { return Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 'left' : 'right') : (vy < 0 ? 'up' : 'down'); }
+
+// ---------- 3. play: render ----------
 ctx.imageSmoothingEnabled = false;
 const floor = document.createElement('canvas'); floor.width = W; floor.height = H;
 (() => {
@@ -404,14 +444,25 @@ function frame(now) {
   }
   if (screen === 'play') {
     const run = $('run').checked, speed = run ? 96 : 48;
-    let vx = 0, vy = 0;
-    for (const d of me.held) { vx += VEC[d][0]; vy += VEC[d][1]; }
+    // input priority: keys / pad  >  stick  >  tap target
+    let vx = 0, vy = 0, step = speed * dt, dir = null;
+    if (me.held.size) {
+      for (const d of me.held) { vx += VEC[d][0]; vy += VEC[d][1]; }
+      dir = [...me.held].pop(); target = null;
+    } else if (stick && (stick.vx || stick.vy)) {
+      vx = stick.vx; vy = stick.vy; dir = faceOf(vx, vy);
+    } else if (target) {
+      vx = target.x - me.x; vy = target.y - me.y;
+      const dist = Math.hypot(vx, vy);
+      if (dist < .5) { target = null; vx = vy = 0; }
+      else { dir = faceOf(vx, vy); if (dist < step) step = dist; }
+    }
     me.m = vx !== 0 || vy !== 0;
     if (me.m) {
-      me.dir = [...me.held].pop();
+      me.dir = dir;
       const n = Math.hypot(vx, vy);
-      me.x = Math.max(FW / 2, Math.min(W - FW / 2, me.x + vx / n * speed * dt));
-      me.y = Math.max(28, Math.min(H - 2, me.y + vy / n * speed * dt));
+      me.x = Math.max(FW / 2, Math.min(W - FW / 2, me.x + vx / n * step));
+      me.y = Math.max(28, Math.min(H - 2, me.y + vy / n * step));
       me.t += dt * (run ? 12 : 8);
     } else me.t = 0;
 
@@ -424,11 +475,25 @@ function frame(now) {
     }
 
     ctx.drawImage(floor, 0, 0);
+    if (target) {   // destination marker
+      const tx = Math.round(target.x), ty = Math.round(target.y), b = (now / 300 | 0) % 2;
+      ctx.fillStyle = '#fff6c2';
+      ctx.fillRect(tx - 3 - b, ty, 2, 1); ctx.fillRect(tx + 2 + b, ty, 2, 1);
+      ctx.fillRect(tx, ty - 2 - b, 1, 2); ctx.fillRect(tx, ty + 1 + b, 1, 2);
+    }
     const list = [
       { c: me.c, x: me.x, y: me.y, dir: me.dir, f: me.m ? Math.floor(me.t) % 4 : 0, slot: me.slot, me: true },
       ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false })),
     ].sort((a, b) => a.y - b.y);
     for (const p of list) drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me);
+    if (stick) {    // virtual stick
+      ctx.save();
+      ctx.globalAlpha = .55; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(stick.ox, stick.oy, STICK_R, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = .8; ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(stick.kx, stick.ky, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
   }
   requestAnimationFrame(frame);
 }
