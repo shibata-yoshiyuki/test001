@@ -19,12 +19,26 @@
 
 | ファイル | 内容 |
 |---|---|
-| `shibata_walk.png` | 柴田さん 歩行シート |
-| `cyber_walk.png` | サイバー 歩行シート |
+| `shibata_walk.png` | 柴田さん（手描き） |
+| `cyber_walk.png` | サイバー（手描き） |
+| `yami_walk.png` / `kitamura_walk.png` / `yamada_walk.png` / `shindo_walk.png` / `takeda_walk.png` / `kikuchi_walk.png` / `mabuchi_walk.png` | ヤミさん・北村さん・山田さん・新藤さん・武田さん・菊地さん・馬淵さん（正面絵から自動生成） |
 | `*_walk.json` | コマ割り・アニメーション定義 |
 
 - 1コマ 20×32px、背景透過
 - 横4コマ × 縦4方向（上から 下・左・右・上）
 - 4コマをそのままループ（8fps目安）。各行の1コマ目が待機ポーズ
 
-`index.html` は画像を埋め込んだ単体ファイルなので、それだけで動きます。
+自動生成キャラの横向き・後ろ姿は `tools/gen_chars.py` が正面絵（`source/characters/`）から作っています。
+キャラを増やすときは、正面絵を置いて次を実行し、`index.html` の `CHARS` に1行足します。
+
+```
+python3 tools/gen_chars.py assets/sprites "source/characters/○○さん.PNG=id"
+```
+
+## アイテム素材（おまけ）
+
+`assets/items/` にあります。使い道は未定のため、素材として取り込んであります。一覧は `items.html` で見られます。
+
+- `other_XX.png` / `drink_XX.png` / `food_XX.png`：原寸ドット、余白なし（その他24・飲み物26・食べ物29）
+- `items_atlas.png`：全アイテムを1枚にまとめた画像
+- `items.json`：各アイテムのID・分類・サイズ・アトラス内の位置・元ファイル名

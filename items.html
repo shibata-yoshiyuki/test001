@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>アイテム素材一覧</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+1p:wght@400;700&display=swap">
+<style>
+:root { --bg:#e9ecef; --panel:#f7f8fa; --ink:#1f2429; --muted:#5d6670; --line:#c9cfd6; --accent:#3b82a6;
+  --display:"DotGothic16","M PLUS 1p",system-ui,sans-serif; --body:"M PLUS 1p","Hiragino Sans",system-ui,sans-serif; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg:#15191d; --panel:#1d2329; --ink:#e6eaee; --muted:#9aa4ae; --line:#333c45; --accent:#6fb6d6; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.6 var(--body);
+  padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); padding-block:20px 28px; }
+.wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 20px; }
+h1, h2 { font-family: var(--display); font-weight: 400; margin: 0; }
+h1 { font-size: 1.6rem; } h2 { font-size: 1.15rem; margin-bottom: 10px; }
+.sub { margin: 0; color: var(--muted); }
+a { color: var(--accent); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+figure { margin: 0; background: var(--panel); border: 2px solid var(--line); padding: 10px 6px 6px; display: grid; justify-items: center; gap: 4px; }
+figure img { image-rendering: pixelated; height: 96px; width: auto; max-width: 100%; object-fit: contain; }
+figcaption { font: 12px/1.3 var(--display); color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>アイテム素材一覧</h1>
+    <p class="sub">おまけ素材 79点。名前は <code>assets/items/</code> 内のファイル名、数字は原寸ドット（幅×高さ）です。 <a href="./">歩行テストに戻る</a></p>
+  </div>
+  <div id="list"></div>
+</div>
+<script>
+fetch('assets/items/items.json').then(r => r.json()).then(data => {
+  const groups = {};
+  data.items.forEach(it => (groups[it.categoryLabel] ||= []).push(it));
+  const list = document.getElementById('list');
+  for (const [label, its] of Object.entries(groups)) {
+    const sec = document.createElement('section');
+    const h = document.createElement('h2'); h.textContent = label + '（' + its.length + '）';
+    const g = document.createElement('div'); g.className = 'grid';
+    its.forEach(it => {
+      const f = document.createElement('figure');
+      const im = document.createElement('img'); im.src = 'assets/items/' + it.file; im.alt = it.id;
+      im.style.height = Math.max(24, it.h * 3) + 'px';
+      const c = document.createElement('figcaption'); c.textContent = it.id + '　' + it.w + '×' + it.h;
+      f.append(im, c); g.append(f);
+    });
+    sec.append(h, g); list.append(sec);
+  }
+}).catch(() => { document.getElementById('list').textContent = '一覧を読み込めませんでした。再読み込みしてください。'; });
+</script>
+</body>
+</html>

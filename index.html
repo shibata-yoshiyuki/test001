@@ -34,14 +34,14 @@ h1 { font-family: var(--display); font-weight: 400; font-size: 1.6rem; margin: 0
 h2 { font-family: var(--display); font-weight: 400; font-size: 1.15rem; margin: 0 0 12px; }
 .sub { margin: 0; color: var(--muted); font-size: .9rem; }
 .box { border: 3px solid var(--ink); background: var(--panel); padding: 20px; }
-.cards { display: flex; flex-wrap: wrap; gap: 14px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
 .card {
   display: grid; justify-items: center; gap: 8px; cursor: pointer;
   background: var(--key); border: 2px solid var(--line); padding: 14px 22px 12px;
-  font: 700 1rem var(--body); color: var(--ink);
+  font: 700 .9rem var(--body); color: var(--ink); padding: 10px 6px 8px;
 }
 .card:hover, .card.last { border-color: var(--accent); }
-.card canvas { width: 80px; height: 128px; image-rendering: pixelated; background: #46663f; }
+.card canvas { width: 60px; height: 96px; image-rendering: pixelated; background: #46663f; }
 .lobby { display: grid; gap: 18px; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .btn {
@@ -90,8 +90,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   <section id="select" class="box">
     <h2>使うキャラを選んでください</h2>
     <div class="cards">
-      <button class="card" id="pick-0" data-i="0"><canvas width="20" height="32"></canvas><span>柴田さん</span></button>
-      <button class="card" id="pick-1" data-i="1"><canvas width="20" height="32"></canvas><span>サイバー</span></button>
+      <!-- cards are built from CHARS in the script -->
     </div>
   </section>
 
@@ -115,6 +114,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       </div>
       <p class="msg" id="lobby-msg" role="status"></p>
       <button class="link" id="back">キャラを選び直す</button>
+      <a class="link" href="items.html">アイテム素材一覧</a>
     </div>
   </section>
 
@@ -150,8 +150,23 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
 // ---------- constants ----------
-const SHEETS = ['assets/sprites/shibata_walk.png', 'assets/sprites/cyber_walk.png'];
-const NAMES = ['柴田さん', 'サイバー'];
+// To add a character: put <id>_walk.png (20x32 frames, 4x4) in assets/sprites and add a line here.
+const CHARS = [
+  ['shibata', '柴田さん'], ['cyber', 'サイバー'], ['yami', 'ヤミさん'], ['kitamura', '北村さん'],
+  ['yamada', '山田さん'], ['shindo', '新藤さん'], ['takeda', '武田さん'], ['kikuchi', '菊地さん'], ['mabuchi', '馬淵さん'],
+];
+const SHEETS = CHARS.map(c => 'assets/sprites/' + c[0] + '_walk.png');
+const NAMES = CHARS.map(c => c[1]);
+(() => {
+  const box = document.querySelector('#select .cards');
+  CHARS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'card'; b.id = 'pick-' + i; b.dataset.i = String(i);
+    const cv = document.createElement('canvas'); cv.width = 20; cv.height = 32;
+    const sp = document.createElement('span'); sp.textContent = c[1];
+    b.append(cv, sp); box.append(b);
+  });
+})();
 const SLOT_COLORS = ['#e8c547', '#e0644f', '#5aa9e6', '#9b6be0'];   // P1..P4 tags
 const FW = 20, FH = 32, ROWS = { down: 0, left: 1, right: 2, up: 3 };
 const W = 320, H = 192, TILE = 16, MAX = 4;
@@ -180,10 +195,10 @@ function show(name) {
 function lobbyMsg(text, err) { const el = $('lobby-msg'); el.textContent = text; el.classList.toggle('err', !!err); }
 
 // ---------- 1. select ----------
-const cardCtx = [0, 1].map(i => { const c = document.querySelector('#pick-' + i + ' canvas').getContext('2d'); c.imageSmoothingEnabled = false; return c; });
+const cardCtx = CHARS.map((_, i) => { const c = document.querySelector('#pick-' + i + ' canvas').getContext('2d'); c.imageSmoothingEnabled = false; return c; });
 try { const s = localStorage.getItem('chara'); if (s !== null) $('pick-' + s)?.classList.add('last'); } catch (e) {}
 document.querySelectorAll('.card').forEach(b => b.addEventListener('click', () => {
-  me.c = +b.dataset.i;
+  me.c = Math.min(CHARS.length - 1, Math.max(0, +b.dataset.i | 0));
   try { localStorage.setItem('chara', String(me.c)); } catch (e) {}
   show('lobby'); lobbyMsg('');
   const q = new URLSearchParams(location.search).get('room');
@@ -336,7 +351,7 @@ function renderList() {
   $('plist').replaceChildren(...all.map(p => {
     const li = document.createElement('li');
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = SLOT_COLORS[p.slot - 1];
-    li.append(dot, 'P' + p.slot + '　' + NAMES[p.c] + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : ''));
+    li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : ''));
     return li;
   }));
 }
