@@ -136,6 +136,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       <p class="msg" id="lobby-msg" role="status"></p>
       <button class="link" id="back">キャラを選び直す</button>
       <a class="link" href="items.html">アイテム素材一覧</a>
+      <p class="sub" id="ver"></p>
     </div>
   </section>
 
@@ -184,11 +185,24 @@ const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge i
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
+const VERSION = '2026-11-06c';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 6000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
 
 const $ = id => document.getElementById(id);
+$('ver').textContent = 'ページの版：' + VERSION;
+// stale-page check: browsers may keep an old copy of this page for a few minutes
+if (typeof fetch === 'function') fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => {
+  const m = t.match(/const VERSION = '([^']+)'/);
+  if (m && m[1] !== VERSION) {
+    $('ver').innerHTML = '';
+    const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = '新しい版があります。ここを押して再読み込み';
+    b.addEventListener('click', () => location.replace(location.pathname + '?v=' + Date.now() + (new URLSearchParams(location.search).get('room') ? '&room=' + new URLSearchParams(location.search).get('room') : '')));
+    $('ver').append(b);
+    if ($('lobby').hidden && $('select').hidden) toast('新しい版のページがあります。退出してから再読み込みしてください。');
+  }
+}).catch(() => {});
 const imgs = SHEETS.map(src => { const im = new Image(); im.src = src; return im; });
 
 // ---------- state ----------
@@ -267,10 +281,14 @@ function joinRoom() {
   const p = new Peer();
   let giveUp = 0;
   p.on('open', () => {
-    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c } });
+    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION } });
     giveUp = setTimeout(() => { if (!hostConn) { p.destroy(); busy(false); lobbyMsg('部屋に入れませんでした。コードを確認してもう一度試してください。', true); } }, 10000);
     conn.on('data', d => {
       if (d.t === 'full') { clearTimeout(giveUp); p.destroy(); busy(false); lobbyMsg('この部屋は満員です（最大4人）。', true); return; }
+      if (d.t === 'version') {
+        clearTimeout(giveUp); p.destroy(); busy(false);
+        lobbyMsg('部屋の親とページの版が違います（親：' + d.v + '／あなた：' + VERSION + '）。親もあなたも、ページを再読み込みしてから入り直してください。', true); return;
+      }
       if (d.t === 'welcome') {
         clearTimeout(giveUp);
         peer = p; isHost = false; roomCode = code; hostConn = conn; me.slot = d.slot;
@@ -296,6 +314,10 @@ function spawnX(slot) { return WORLD_W / 2 + (slot - 2.5) * 28; }
 function freeSlot() { const used = new Set([1, ...[...conns.values()].map(v => v.slot)]); for (let s = 1; s <= MAX; s++) if (!used.has(s)) return s; return 0; }
 function onHostConnection(conn) {
   conn.on('open', () => {
+    if (!conn.metadata || conn.metadata.v !== VERSION) {
+      conn.send({ t: 'version', v: VERSION }); setTimeout(() => conn.close(), 500);
+      toast('違う版のページから入ろうとした人がいます。全員ページを再読み込みしてください。'); return;
+    }
     const slot = freeSlot();
     if (!slot) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); return; }
     const st = { slot, c: Math.min(CHARS.length - 1, Math.max(0, (conn.metadata && conn.metadata.c) | 0)), x: spawnX(slot), y: WORLD_H / 2, dir: 'down', m: false };
@@ -365,9 +387,13 @@ function addShot(d) {
   if (slot !== me.slot) { const o = otherBySlot(slot); if (o) o.atkT = performance.now(); }
   return sh;
 }
-function fire() {
+function fire(aimX, aimY) {
   const now = performance.now();
   if (screen !== 'play' || !peer || me.down || now - me.lastShot < SHOT_CD) return;
+  if (aimX !== undefined) {
+    const n = Math.hypot(aimX, aimY);
+    if (n > 0.5) { me.aimX = aimX / n; me.aimY = aimY / n; me.dir = faceOf(aimX, aimY); }
+  }
   me.lastShot = now; me.atkT = now;
   const sh = addShot({ id: me.slot + '-' + (++shotSeq) + '-' + (now | 0), slot: me.slot, x: me.x + me.aimX * 8, y: me.y + me.aimY * 6, vx: me.aimX, vy: me.aimY });
   if (!sh) return;
@@ -384,7 +410,8 @@ function stepShots(dt, now) {
       if (t.slot === sh.slot) continue;
       const st = stats.get(t.slot);
       if (!st || st.down || now < st.invUntil) continue;
-      if (Math.abs(sh.x - t.x) < 9 && Math.abs(sh.y - t.y) < 7) {
+      const oy = sh.y - 12;                     // where the orb is drawn
+      if (Math.abs(sh.x - t.x) <= 9 && oy >= t.y - 30 && oy <= t.y + 2) {
         st.life = Math.max(0, st.life - 1); st.invUntil = now + INV_MS;
         if (st.life === 0) { st.down = true; st.downUntil = now + DOWN_MS; const by = stats.get(sh.slot); if (by) by.ko++; }
         const v = Math.hypot(sh.vx, sh.vy) || 1;
@@ -569,6 +596,12 @@ function resize() {
 }
 addEventListener('resize', () => { if (screen === 'play') resize(); });
 cv.addEventListener('pointerdown', e => {
+  if (screen === 'play' && e.pointerType === 'mouse' && e.button === 2) {   // PC: right click = shoot toward the cursor
+    e.preventDefault();
+    const g = toGame(e);
+    fire(g.x + camX - me.x, g.y + camY - (me.y - 12));
+    return;
+  }
   if (screen !== 'play' || ptr || (e.pointerType === 'mouse' && e.button !== 0)) return;
   e.preventDefault(); cv.setPointerCapture?.(e.pointerId);
   ptr = { id: e.pointerId, sx: e.clientX, sy: e.clientY, t0: performance.now(), drag: false };
