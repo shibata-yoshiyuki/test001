@@ -86,6 +86,16 @@ button.chip { cursor: pointer; }
   background: rgba(16, 22, 28, .78); color: #f1f4f6; padding: 6px 12px; font-size: .85rem; transition: opacity .6s;
 }
 .toast:empty { display: none; }
+.atk {
+  position: absolute; z-index: 2; width: 84px; height: 84px; border-radius: 50%;
+  right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  background: rgba(214, 72, 64, .82); color: #fff; border: 3px solid rgba(255,255,255,.75);
+  font: 1.05rem var(--display); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.atk.on { background: rgba(255, 120, 100, .95); transform: scale(.94); }
+.atk:disabled { background: rgba(90, 90, 90, .7); }
+.life { color: #ff6b6b; letter-spacing: .05em; }
+.life.down { color: #c0c6cc; }
 .toast.fade { opacity: 0; }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 </style>
@@ -139,6 +149,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     <div class="chip"><ul class="plist" id="plist" aria-label="参加者"></ul><span id="count" hidden></span></div>
   </div>
   <p class="toast" id="play-msg" role="status"></p>
+  <button class="atk" id="atk" aria-label="攻撃（スペースキー）">攻撃</button>
   <div class="hud-bottom">
     <label class="chip"><input type="checkbox" id="run"> 走る</label>
     <button class="chip" id="fs">全画面</button>
@@ -174,12 +185,20 @@ const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
 const SEND_MS = 66, TIMEOUT_MS = 6000;
+// battle
+const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
 
 const $ = id => document.getElementById(id);
 const imgs = SHEETS.map(src => { const im = new Image(); im.src = src; return im; });
 
 // ---------- state ----------
-const me = { c: 0, x: WORLD_W / 2, y: WORLD_H / 2, dir: 'down', m: false, t: 0, held: new Set(), slot: 0 };
+const me = { c: 0, x: WORLD_W / 2, y: WORLD_H / 2, dir: 'down', m: false, t: 0, held: new Set(), slot: 0,
+  life: LIFE_MAX, down: false, inv: false, ko: 0, aimX: 0, aimY: 1, lastShot: -1e9, atkT: -1e9 };
+const shots = new Map();           // id -> {id, slot, x, y, vx, vy, dist}   (x,y = point on the ground)
+let sparks = [];                   // hit effects
+let shotSeq = 0, atkHeld = false;
+const stats = new Map();           // host only: slot -> {life, invUntil, down, downUntil, ko}
+const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0 });
 let screen = 'select';
 let peer = null, isHost = false, roomCode = '';
 let hostConn = null;               // client side: connection to host
@@ -227,6 +246,7 @@ function createRoom(tries) {
   const p = new Peer(ID_PREFIX + code);
   p.on('open', () => {
     peer = p; isHost = true; roomCode = code; me.slot = 1; me.x = spawnX(1); me.y = WORLD_H / 2;
+    stats.clear(); stats.set(1, freshStat());
     p.on('connection', onHostConnection);
     enterPlay();
   });
@@ -259,6 +279,9 @@ function joinRoom() {
         return;
       }
       if (d.t === 'all') { lastHostMsg = performance.now(); applyAll(d.ps); }
+      else if (d.t === 'shot') addShot(d);
+      else if (d.t === 'hit') onHit(d);
+      else if (d.t === 'respawn') onRespawn(d);
     });
     conn.on('close', () => { if (hostConn === conn) endRoom('親が部屋を閉じたため、部屋が終了しました。'); });
   });
@@ -277,17 +300,25 @@ function onHostConnection(conn) {
     if (!slot) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); return; }
     const st = { slot, c: Math.min(CHARS.length - 1, Math.max(0, (conn.metadata && conn.metadata.c) | 0)), x: spawnX(slot), y: WORLD_H / 2, dir: 'down', m: false };
     conns.set(conn.peer, { conn, slot, last: performance.now() });
+    stats.set(slot, freshStat());
     others.set(conn.peer, { ...st, dx: st.x, dy: st.y, t: 0 });
     conn.send({ t: 'welcome', slot, x: st.x, y: st.y });
     renderList();
   });
   conn.on('data', d => {
-    const rec = conns.get(conn.peer); if (!rec || d.t !== 's') return;
+    const rec = conns.get(conn.peer); if (!rec) return;
+    if (d.t === 'shot') {                       // relay a client's shot to everyone else
+      const st = stats.get(rec.slot);
+      if (!st || st.down || d.slot !== rec.slot) return;
+      const sh = addShot(d); if (sh) broadcast({ t: 'shot', ...sh }, conn.peer);
+      return;
+    }
+    if (d.t !== 's') return;
     rec.last = performance.now();
     const o = others.get(conn.peer);
     if (o) Object.assign(o, { c: d.c | 0, x: +d.x, y: +d.y, dir: ROWS[d.dir] !== undefined ? d.dir : 'down', m: !!d.m });
   });
-  const drop = () => { if (conns.delete(conn.peer)) { others.delete(conn.peer); renderList(); } };
+  const drop = () => { const rec = conns.get(conn.peer); if (conns.delete(conn.peer)) { others.delete(conn.peer); if (rec) stats.delete(rec.slot); renderList(); } };
   conn.on('close', drop);
   conn.on('error', drop);
 }
@@ -296,23 +327,127 @@ function onHostConnection(conn) {
 function applyAll(ps) {
   const next = new Map();
   for (const p of ps) {
-    if (p.slot === me.slot) continue;
+    if (p.slot === me.slot) {
+      if (p.life !== undefined) { me.life = p.life; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; }
+      continue;
+    }
     const key = 's' + p.slot, prev = others.get(key);
-    next.set(key, { ...p, dx: prev ? prev.dx : p.x, dy: prev ? prev.dy : p.y, t: prev ? prev.t : 0 });
+    next.set(key, { ...p, dx: prev ? prev.dx : p.x, dy: prev ? prev.dy : p.y, t: prev ? prev.t : 0, atkT: prev ? prev.atkT : -1e9 });
   }
   const changed = next.size !== others.size || [...next.keys()].some(k => !others.has(k));
   others = next;
-  if (changed) renderList();
+  if (changed) renderList(); else refreshListIfChanged();
 }
 
-function myState() { return { slot: me.slot, c: me.c, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, m: me.m }; }
+function myState() { return { slot: me.slot, c: me.c, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, m: me.m, ...(isHost ? statOut(me.slot) : {}) }; }
+function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, down: st.down, inv: now < st.invUntil, ko: st.ko } : {}; }
+function broadcast(msg, exceptPeer) { for (const [id, { conn }] of conns) if (id !== exceptPeer && conn.open) conn.send(msg); }
+function otherBySlot(slot) { for (const o of others.values()) if (o.slot === slot) return o; return null; }
+let listSig = '';
+function syncFromStats() {    // host: copy authoritative battle state onto the drawn players
+  Object.assign(me, statOut(me.slot));
+  for (const o of others.values()) Object.assign(o, statOut(o.slot));
+  refreshListIfChanged();
+}
+function refreshListIfChanged() {
+  const sig = [me, ...others.values()].map(p => p.slot + ':' + p.life + ':' + p.down + ':' + p.ko).join('|');
+  if (sig !== listSig) { listSig = sig; renderList(); }
+}
+
+// ---------- battle ----------
+function addShot(d) {
+  const id = String(d.id), slot = d.slot | 0;
+  if (shots.has(id) || !(slot >= 1 && slot <= MAX)) return null;
+  const v = Math.hypot(+d.vx, +d.vy) || 1;
+  const sh = { id, slot, x: +d.x, y: +d.y, vx: d.vx / v * SHOT_SPEED, vy: d.vy / v * SHOT_SPEED, dist: 0 };
+  if (!isFinite(sh.x) || !isFinite(sh.y)) return null;
+  shots.set(id, sh);
+  if (slot !== me.slot) { const o = otherBySlot(slot); if (o) o.atkT = performance.now(); }
+  return sh;
+}
+function fire() {
+  const now = performance.now();
+  if (screen !== 'play' || !peer || me.down || now - me.lastShot < SHOT_CD) return;
+  me.lastShot = now; me.atkT = now;
+  const sh = addShot({ id: me.slot + '-' + (++shotSeq) + '-' + (now | 0), slot: me.slot, x: me.x + me.aimX * 8, y: me.y + me.aimY * 6, vx: me.aimX, vy: me.aimY });
+  if (!sh) return;
+  if (isHost) broadcast({ t: 'shot', ...sh });
+  else if (hostConn && hostConn.open) hostConn.send({ t: 'shot', ...sh });
+}
+function stepShots(dt, now) {
+  for (const sh of shots.values()) {
+    sh.x += sh.vx * dt; sh.y += sh.vy * dt; sh.dist += SHOT_SPEED * dt;
+    if (sh.dist > SHOT_RANGE) { shots.delete(sh.id); continue; }
+    if (!isHost) continue;                      // only the host decides hits
+    const targets = [{ slot: me.slot, x: me.x, y: me.y }, ...[...others.values()].map(o => ({ slot: o.slot, x: o.x, y: o.y }))];
+    for (const t of targets) {
+      if (t.slot === sh.slot) continue;
+      const st = stats.get(t.slot);
+      if (!st || st.down || now < st.invUntil) continue;
+      if (Math.abs(sh.x - t.x) < 9 && Math.abs(sh.y - t.y) < 7) {
+        st.life = Math.max(0, st.life - 1); st.invUntil = now + INV_MS;
+        if (st.life === 0) { st.down = true; st.downUntil = now + DOWN_MS; const by = stats.get(sh.slot); if (by) by.ko++; }
+        const v = Math.hypot(sh.vx, sh.vy) || 1;
+        const msg = { t: 'hit', id: sh.id, victim: t.slot, by: sh.slot, life: st.life, kx: sh.vx / v, ky: sh.vy / v };
+        broadcast(msg); onHit(msg); syncFromStats();
+        break;
+      }
+    }
+  }
+}
+function slotName(slot) {
+  if (slot === me.slot) return 'あなた';
+  const o = otherBySlot(slot); return 'P' + slot + (o ? '（' + (NAMES[o.c] || '？') + '）' : '');
+}
+function onHit(d) {
+  const sh = shots.get(String(d.id)); shots.delete(String(d.id));
+  const victim = d.victim === me.slot ? me : otherBySlot(d.victim);
+  if (victim) sparks.push({ x: victim === me ? me.x : victim.dx, y: (victim === me ? me.y : victim.dy) - 12, t: performance.now() });
+  if (d.victim === me.slot) {
+    me.life = d.life; me.inv = true;
+    const kx = me.x + d.kx * 10, ky = me.y + d.ky * 10;      // knockback
+    if (canStand(kx, ky)) { me.x = kx; me.y = ky; }
+    target = null;
+    if (d.life <= 0) { me.down = true; toast(slotName(d.by) + 'にやられた！ 3秒後に復活します'); }
+  } else if (victim) {
+    victim.life = d.life; victim.inv = true;
+    if (d.life <= 0) { victim.down = true; toast(d.by === me.slot ? slotName(d.victim) + 'を倒した！' : slotName(d.by) + 'が' + slotName(d.victim) + 'を倒した'); }
+  }
+  refreshListIfChanged();
+}
+function onRespawn(d) {
+  if (d.slot === me.slot) {
+    me.x = d.x; me.y = d.y; me.down = false; me.life = LIFE_MAX; target = null;
+    toast('復活しました');
+  } else {
+    const o = otherBySlot(d.slot);
+    if (o) { o.x = o.dx = d.x; o.y = o.dy = d.y; o.down = false; o.life = LIFE_MAX; }
+  }
+  refreshListIfChanged();
+}
+function randomLandSpot() {
+  for (let i = 0; i < 500; i++) {
+    const x = (Math.random() * WORLD_W) | 0, y = (Math.random() * WORLD_H) | 0;
+    const ty = Math.floor(y / TILE), tx = Math.floor(x / TILE);
+    if (ty >= 0 && tx >= 0 && ty < MAP_H && tx < MAP_W && land[ty][tx] && !beach[ty][tx] && canStand(x, y)) return { x, y };
+  }
+  return { x: WORLD_W / 2, y: WORLD_H / 2 };
+}
 setInterval(() => {
   if (screen !== 'play' || !peer) return;
   const now = performance.now();
   if (isHost) {
-    for (const [id, rec] of conns) if (now - rec.last > TIMEOUT_MS) { rec.conn.close(); conns.delete(id); others.delete(id); renderList(); }
-    const ps = [myState(), ...[...others.values()].map(o => ({ slot: o.slot, c: o.c, x: o.x, y: o.y, dir: o.dir, m: o.m }))];
-    for (const { conn } of conns.values()) if (conn.open) conn.send({ t: 'all', ps });
+    for (const [id, rec] of conns) if (now - rec.last > TIMEOUT_MS) { rec.conn.close(); conns.delete(id); others.delete(id); stats.delete(rec.slot); renderList(); }
+    for (const [slot, st] of stats) {            // revive downed players
+      if (st.down && now >= st.downUntil) {
+        st.down = false; st.life = LIFE_MAX; st.invUntil = now + 1500;
+        const p = randomLandSpot(), msg = { t: 'respawn', slot, x: p.x, y: p.y };
+        broadcast(msg); onRespawn(msg);
+      }
+    }
+    syncFromStats();
+    const ps = [myState(), ...[...others.values()].map(o => ({ slot: o.slot, c: o.c, x: o.x, y: o.y, dir: o.dir, m: o.m, ...statOut(o.slot) }))];
+    broadcast({ t: 'all', ps });
   } else if (hostConn) {
     if (now - lastHostMsg > TIMEOUT_MS) { endRoom('親との通信が途切れたため、部屋から出ました。'); return; }
     if (hostConn.open) hostConn.send({ t: 's', ...myState() });
@@ -335,6 +470,8 @@ function endRoom(msg) {
   const p = peer;
   peer = null; hostConn = null; isHost = false;
   conns.clear(); others = new Map(); me.held.clear(); target = null; stick = null; ptr = null;
+  shots.clear(); sparks = []; stats.clear(); atkHeld = false;
+  Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0 });
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   document.body.style.overflow = '';
@@ -366,25 +503,42 @@ $('copy').addEventListener('click', () => {
 });
 
 function renderList() {
-  const all = [{ slot: me.slot, c: me.c, you: true }, ...[...others.values()]].sort((a, b) => a.slot - b.slot);
+  const all = [{ slot: me.slot, c: me.c, you: true, life: me.life, down: me.down, ko: me.ko }, ...[...others.values()]].sort((a, b) => a.slot - b.slot);
   $('count').textContent = all.length + ' / ' + MAX;
   $('plist').replaceChildren(...all.map(p => {
     const li = document.createElement('li');
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = SLOT_COLORS[p.slot - 1];
-    li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : ''));
+    const life = document.createElement('span');
+    const lv = p.life === undefined ? LIFE_MAX : p.life;
+    life.className = 'life' + (p.down ? ' down' : '');
+    life.textContent = p.down ? 'ダウン' : '♥'.repeat(lv) + '♡'.repeat(Math.max(0, LIFE_MAX - lv));
+    li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : '') + '　', life, '　撃破 ' + (p.ko | 0));
     return li;
   }));
 }
 
 // ---------- 3. play: input ----------
 const KEYMAP = { KeyW: 'up', KeyA: 'left', KeyS: 'down', KeyD: 'right', ArrowUp: 'up', ArrowLeft: 'left', ArrowDown: 'down', ArrowRight: 'right' };
+const ATTACK_KEYS = new Set(['Space', 'KeyJ', 'Enter']);
 addEventListener('keydown', e => {
+  if (ATTACK_KEYS.has(e.code) && screen === 'play' && !(e.target instanceof HTMLInputElement && e.target.type === 'text')) {
+    e.preventDefault(); atkHeld = true; if (!e.repeat) fire(); return;
+  }
   const d = KEYMAP[e.code]; if (!d || screen !== 'play') return;
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
   e.preventDefault(); me.held.delete(d); me.held.add(d);
 });
-addEventListener('keyup', e => { const d = KEYMAP[e.code]; if (d) me.held.delete(d); });
-addEventListener('blur', () => me.held.clear());
+addEventListener('keyup', e => { if (ATTACK_KEYS.has(e.code)) atkHeld = false; const d = KEYMAP[e.code]; if (d) me.held.delete(d); });
+addEventListener('blur', () => { me.held.clear(); atkHeld = false; });
+{
+  const b = $('atk');
+  const on = e => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); b.classList.add('on'); atkHeld = true; fire(); };
+  const off = () => { b.classList.remove('on'); atkHeld = false; };
+  b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off);
+  b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+  b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); });
+}
 document.querySelectorAll('.pad button').forEach(b => {
   const d = b.dataset.dir;
   const on = e => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); b.classList.add('on'); me.held.delete(d); me.held.add(d); };
@@ -530,11 +684,24 @@ function drawWaves(now) {   // little moving highlights on visible sea tiles
   }
 }
 
-function drawChar(c, x, y, dir, frame, slot, isMe) {
-  const dx = Math.round(x - FW / 2), dy = Math.round(y - FH);
+const HEART = ['01010', '11111', '11111', '01110', '00100'];
+function drawChar(c, x, y, dir, frame, slot, isMe, p = {}) {
+  const now = performance.now();
+  let dx = Math.round(x - FW / 2), dy = Math.round(y - FH);
   ctx.fillStyle = 'rgba(0,0,0,.22)';
   ctx.fillRect(dx + 5, dy + FH - 2, 10, 2); ctx.fillRect(dx + 4, dy + FH - 1, 12, 1);
-  if (imgs[c] && imgs[c].complete) ctx.drawImage(imgs[c], frame * FW, ROWS[dir] * FH, FW, FH, dx, dy, FW, FH);
+  if (now - (p.atkT || -1e9) < 140) { frame = 1; dx += Math.round((p.ax || 0) * 2); dy += Math.round((p.ay || 0) * 2); }   // small lunge
+  const blink = p.inv && !p.down && (now / 90 | 0) % 2;
+  if (p.down) ctx.globalAlpha = .4;
+  if (!blink && imgs[c] && imgs[c].complete) ctx.drawImage(imgs[c], (p.down ? 0 : frame) * FW, ROWS[p.down ? 'down' : dir] * FH, FW, FH, dx, dy, FW, FH);
+  ctx.globalAlpha = 1;
+  // life hearts above the tag
+  const lv = p.life === undefined ? LIFE_MAX : p.life;
+  for (let i = 0; i < LIFE_MAX; i++) {
+    const hx = dx + 1 + i * 6, hy = dy - 8;
+    ctx.fillStyle = i < lv ? '#e5484d' : 'rgba(30,30,30,.55)';
+    HEART.forEach((row, r) => [...row].forEach((b, cc) => { if (b === '1') ctx.fillRect(hx + cc, hy + r, 1, 1); }));
+  }
   // player tag: small coloured flag with P-number above the head
   const tx = dx + 5, ty = dy - 1;
   ctx.fillStyle = '#111'; ctx.fillRect(tx - 1, ty - 1, 11, 7);
@@ -559,7 +726,8 @@ function frame(now) {
     const run = $('run').checked, speed = run ? 96 : 48;
     // input priority: keys / pad  >  stick  >  tap target
     let vx = 0, vy = 0, step = speed * dt, dir = null;
-    if (me.held.size) {
+    if (me.down) { /* can't move while down */ }
+    else if (me.held.size) {
       for (const d of me.held) { vx += VEC[d][0]; vy += VEC[d][1]; }
       dir = [...me.held].pop(); target = null;
     } else if (stick && (stick.vx || stick.vy)) {
@@ -574,6 +742,7 @@ function frame(now) {
     if (me.m) {
       me.dir = dir;
       const n = Math.hypot(vx, vy), mx = vx / n * step, my = vy / n * step;
+      me.aimX = vx / n; me.aimY = vy / n;
       let moved = false;
       if (canStand(me.x + mx, me.y)) { me.x += mx; moved = moved || Math.abs(mx) > 1e-3; }   // per-axis so you slide along the shore
       if (canStand(me.x, me.y + my)) { me.y += my; moved = moved || Math.abs(my) > 1e-3; }
@@ -583,6 +752,9 @@ function frame(now) {
     if (!me.m) me.t = 0;
     if (!canStand(me.x, me.y)) { me.x = WORLD_W / 2; me.y = WORLD_H / 2; }   // safety net: never stuck in the sea
     camX = Math.round(me.x - VW / 2); camY = Math.round(me.y - 16 - VH / 2);
+    if (atkHeld) fire();
+    stepShots(dt, now);
+    $('atk').disabled = me.down;
 
     // smooth other players toward their latest reported position
     for (const o of others.values()) {
@@ -603,11 +775,31 @@ function frame(now) {
       ctx.fillRect(tx - 3 - b, ty, 2, 1); ctx.fillRect(tx + 2 + b, ty, 2, 1);
       ctx.fillRect(tx, ty - 2 - b, 1, 2); ctx.fillRect(tx, ty + 1 + b, 1, 2);
     }
+    const VD = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
     const list = [
-      { c: me.c, x: me.x, y: me.y, dir: me.dir, f: me.m ? Math.floor(me.t) % 4 : 0, slot: me.slot, me: true },
-      ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false })),
+      { c: me.c, x: me.x, y: me.y, dir: me.dir, f: me.m ? Math.floor(me.t) % 4 : 0, slot: me.slot, me: true,
+        p: { life: me.life, down: me.down, inv: me.inv, atkT: me.atkT, ax: me.aimX, ay: me.aimY } },
+      ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false,
+        p: { life: o.life, down: o.down, inv: o.inv, atkT: o.atkT, ax: (VD[o.dir] || [0, 1])[0], ay: (VD[o.dir] || [0, 1])[1] } })),
     ].sort((a, b) => a.y - b.y);
-    for (const p of list) drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me);
+    // shots: shadow on the ground, orb at chest height
+    for (const sh of shots.values()) {
+      const sx = Math.round(sh.x), sy = Math.round(sh.y);
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(sx - 2, sy - 1, 5, 2);
+      const v = Math.hypot(sh.vx, sh.vy) || 1, ux = sh.vx / v, uy = sh.vy / v;
+      ctx.fillStyle = SLOT_COLORS[sh.slot - 1] || '#fff';
+      ctx.globalAlpha = .45; ctx.fillRect(Math.round(sx - ux * 5) - 1, Math.round(sy - 12 - uy * 5) - 1, 3, 3);
+      ctx.globalAlpha = 1;
+      ctx.fillRect(sx - 2, sy - 14, 5, 5);
+      ctx.fillStyle = '#fff'; ctx.fillRect(sx - 1, sy - 13, 3, 3);
+    }
+    for (const p of list) drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me, p.p);
+    sparks = sparks.filter(sp => now - sp.t < 300);
+    for (const sp of sparks) {
+      const k = (now - sp.t) / 300, r = 3 + k * 7;
+      ctx.fillStyle = 'rgba(255, 245, 200,' + (1 - k).toFixed(2) + ')';
+      for (let a = 0; a < 8; a++) ctx.fillRect(Math.round(sp.x + Math.cos(a * Math.PI / 4) * r) - 1, Math.round(sp.y + Math.sin(a * Math.PI / 4) * r) - 1, 2, 2);
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);                               // screen space
     if (stick) {    // virtual stick
       ctx.save();
