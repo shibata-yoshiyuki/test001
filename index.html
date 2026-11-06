@@ -57,25 +57,36 @@ input[type=text] {
 .msg { min-height: 1.6em; margin: 0; font-size: .9rem; color: var(--muted); }
 .msg.err { color: var(--warn); }
 .link { font: .9rem var(--body); color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
-.hud { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-size: .9rem; }
-.code { font-family: var(--display); font-size: 1.4rem; letter-spacing: .2em; }
-.stage { border: 3px solid var(--ink); background: #3d5a3a; }
-canvas#game { display: block; width: 100%; height: auto; image-rendering: pixelated; touch-action: none; }
-.controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; justify-content: space-between; }
-.side { display: grid; gap: 8px; min-width: 0; }
 .label { font-size: .75rem; letter-spacing: .08em; color: var(--muted); }
-.plist { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.plist li { display: flex; gap: 8px; align-items: center; }
-.dot { width: 10px; height: 10px; display: inline-block; }
-kbd {
-  font-family: var(--display); font-size: .85rem; color: var(--ink);
-  background: var(--key); border: 1px solid var(--line); border-bottom-width: 3px; padding: 0 6px;
+/* full-screen play view: canvas fills the window, HUD floats on top */
+.play { position: fixed; inset: 0; z-index: 10; background: #1d4f6e; overflow: hidden; }
+canvas#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
+.hud-top, .hud-bottom {
+  position: absolute; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start;
+  padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
 }
-.pad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 4px; user-select: none; -webkit-user-select: none; }
-.pad button { font: 1.2rem var(--display); color: var(--ink); background: var(--key); border: 2px solid var(--line); cursor: pointer; touch-action: none; }
-.pad button.on { background: var(--accent); color: var(--key); border-color: var(--accent); }
-.pad .u { grid-column: 2; grid-row: 1; } .pad .l { grid-column: 1; grid-row: 2; }
-.pad .r { grid-column: 3; grid-row: 2; } .pad .d { grid-column: 2; grid-row: 3; }
+.hud-top { top: 0; padding-top: calc(8px + env(safe-area-inset-top, 0px)); justify-content: space-between; }
+.hud-bottom { bottom: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); justify-content: flex-end; align-items: flex-end; }
+.chip {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(16, 22, 28, .72); color: #f1f4f6; border: 1px solid rgba(255,255,255,.18);
+  padding: 5px 10px; font: 700 .85rem var(--body); line-height: 1.4;
+}
+button.chip { cursor: pointer; }
+.chip button { font: inherit; color: #9fd3ee; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+.chip input { margin: 0; }
+.code { font-family: var(--display); font-size: 1.15rem; letter-spacing: .15em; font-weight: 400; }
+.plist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; font-weight: 400; font-size: .8rem; }
+.plist li { display: flex; gap: 6px; align-items: center; }
+.dot { width: 9px; height: 9px; display: inline-block; flex: none; }
+.toast {
+  position: absolute; left: 50%; top: calc(56px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+  max-width: calc(100% - 32px); margin: 0; text-align: center; pointer-events: none;
+  background: rgba(16, 22, 28, .78); color: #f1f4f6; padding: 6px 12px; font-size: .85rem; transition: opacity .6s;
+}
+.toast:empty { display: none; }
+.toast.fade { opacity: 0; }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
@@ -118,34 +129,22 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     </div>
   </section>
 
-  <!-- 3. play -->
-  <section id="play" hidden>
-    <div class="wrap">
-      <div class="hud">
-        <span>部屋コード <span class="code" id="room-code"></span></span>
-        <button class="btn" id="copy">招待リンクをコピー</button>
-        <span id="copy-msg" class="sub" role="status"></span>
-      </div>
-      <div class="stage"><canvas id="game" width="320" height="192"></canvas></div>
-      <p class="msg" id="play-msg" role="status"></p>
-      <div class="controls">
-        <div class="side">
-          <span class="label">参加者 <span id="count"></span></span>
-          <ul class="plist" id="plist"></ul>
-          <div class="sub">画面をタップ（クリック）するとその場所へ移動。<br>押したまま上下左右にずらすと、その方向へ移動。<br><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> と十字ボタンでも動けます。</div>
-          <label class="sub"><input type="checkbox" id="run"> 走る（2倍速）</label>
-          <button class="link" id="leave">部屋から出る</button>
-        </div>
-        <div class="pad" aria-label="十字ボタン">
-          <button class="u" data-dir="up" aria-label="上">▲</button>
-          <button class="l" data-dir="left" aria-label="左">◀</button>
-          <button class="r" data-dir="right" aria-label="右">▶</button>
-          <button class="d" data-dir="down" aria-label="下">▼</button>
-        </div>
-      </div>
-    </div>
-  </section>
 </div>
+
+<!-- 3. play (full screen) -->
+<section id="play" class="play" hidden>
+  <canvas id="game" aria-label="ゲーム画面。タップでその場所へ移動、押したままずらすとその方向へ移動"></canvas>
+  <div class="hud-top">
+    <div class="chip">部屋 <span class="code" id="room-code"></span> <button id="copy">招待リンクをコピー</button> <span id="copy-msg" role="status"></span></div>
+    <div class="chip"><ul class="plist" id="plist" aria-label="参加者"></ul><span id="count" hidden></span></div>
+  </div>
+  <p class="toast" id="play-msg" role="status"></p>
+  <div class="hud-bottom">
+    <label class="chip"><input type="checkbox" id="run"> 走る</label>
+    <button class="chip" id="fs">全画面</button>
+    <button class="chip" id="leave">退出</button>
+  </div>
+</section>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
@@ -169,7 +168,9 @@ const NAMES = CHARS.map(c => c[1]);
 })();
 const SLOT_COLORS = ['#e8c547', '#e0644f', '#5aa9e6', '#9b6be0'];   // P1..P4 tags
 const FW = 20, FH = 32, ROWS = { down: 0, left: 1, right: 2, up: 3 };
-const W = 320, H = 192, TILE = 16, MAX = 4;
+const TILE = 16, MAX = 4;
+const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge is sea)
+const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
 const SEND_MS = 66, TIMEOUT_MS = 6000;
@@ -178,7 +179,7 @@ const $ = id => document.getElementById(id);
 const imgs = SHEETS.map(src => { const im = new Image(); im.src = src; return im; });
 
 // ---------- state ----------
-const me = { c: 0, x: 160, y: 120, dir: 'down', m: false, t: 0, held: new Set(), slot: 0 };
+const me = { c: 0, x: WORLD_W / 2, y: WORLD_H / 2, dir: 'down', m: false, t: 0, held: new Set(), slot: 0 };
 let screen = 'select';
 let peer = null, isHost = false, roomCode = '';
 let hostConn = null;               // client side: connection to host
@@ -225,7 +226,7 @@ function createRoom(tries) {
   const code = randomCode();
   const p = new Peer(ID_PREFIX + code);
   p.on('open', () => {
-    peer = p; isHost = true; roomCode = code; me.slot = 1;
+    peer = p; isHost = true; roomCode = code; me.slot = 1; me.x = spawnX(1); me.y = WORLD_H / 2;
     p.on('connection', onHostConnection);
     enterPlay();
   });
@@ -268,12 +269,13 @@ function joinRoom() {
 }
 
 // host side
+function spawnX(slot) { return WORLD_W / 2 + (slot - 2.5) * 28; }
 function freeSlot() { const used = new Set([1, ...[...conns.values()].map(v => v.slot)]); for (let s = 1; s <= MAX; s++) if (!used.has(s)) return s; return 0; }
 function onHostConnection(conn) {
   conn.on('open', () => {
     const slot = freeSlot();
     if (!slot) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); return; }
-    const st = { slot, c: (conn.metadata && conn.metadata.c) | 0, x: 60 + slot * 50, y: 120, dir: 'down', m: false };
+    const st = { slot, c: Math.min(CHARS.length - 1, Math.max(0, (conn.metadata && conn.metadata.c) | 0)), x: spawnX(slot), y: WORLD_H / 2, dir: 'down', m: false };
     conns.set(conn.peer, { conn, slot, last: performance.now() });
     others.set(conn.peer, { ...st, dx: st.x, dy: st.y, t: 0 });
     conn.send({ t: 'welcome', slot, x: st.x, y: st.y });
@@ -321,10 +323,12 @@ function enterPlay() {
   busy(false);
   $('room-code').textContent = roomCode;
   $('copy-msg').textContent = '';
-  $('play-msg').textContent = isHost ? 'この部屋コードか招待リンクを、一緒に遊ぶ人に送ってください。' : '';
+  toast(isHost ? 'この部屋コードか招待リンクを、一緒に遊ぶ人に送ってください。' : '部屋に入りました。');
   history.replaceState(null, '', '?room=' + roomCode);
   renderList();
   show('play');
+  document.body.style.overflow = 'hidden';
+  resize();
 }
 
 function endRoom(msg) {
@@ -333,16 +337,32 @@ function endRoom(msg) {
   conns.clear(); others = new Map(); me.held.clear(); target = null; stick = null; ptr = null;
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
+  document.body.style.overflow = '';
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   busy(false); show('lobby'); lobbyMsg(msg || '', !!msg);
 }
+let toastTimer = 0;
+function toast(text) {
+  const el = $('play-msg'); el.textContent = text; el.classList.remove('fade');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.classList.add('fade'); setTimeout(() => { if (el.classList.contains('fade')) el.textContent = ''; }, 700); }, 5000);
+}
+// browser full screen (not available on iPhone; the play view already fills the window)
+const fsBtn = $('fs');
+if (!document.documentElement.requestFullscreen) fsBtn.hidden = true;
+fsBtn.addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen().catch(() => toast('このブラウザでは全画面にできません。'));
+});
+document.addEventListener('fullscreenchange', () => { fsBtn.textContent = document.fullscreenElement ? '全画面を解除' : '全画面'; setTimeout(resize, 50); });
 $('leave').addEventListener('click', () => endRoom(''));
 addEventListener('pagehide', () => { if (peer) try { peer.destroy(); } catch (e) {} });
 
 $('copy').addEventListener('click', () => {
   const url = location.origin + location.pathname + '?room=' + roomCode;
-  const done = () => $('copy-msg').textContent = 'コピーしました';
-  if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, () => $('copy-msg').textContent = url);
-  else $('copy-msg').textContent = url;
+  const done = () => { $('copy-msg').textContent = ''; toast('招待リンクをコピーしました'); };
+  if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, () => toast(url));
+  else toast(url);
 });
 
 function renderList() {
@@ -377,12 +397,23 @@ document.querySelectorAll('.pad button').forEach(b => {
 const cv = $('game'), ctx = cv.getContext('2d');
 const TAP_MS = 350, DRAG_PX = 12, DEAD_PX = 6, STICK_R = 14;
 let ptr = null;        // active pointer on the stage
-let target = null;     // {x, y} in game pixels
-let stick = null;      // {ox, oy, vx, vy, kx, ky} in game pixels
-function toGame(e) {
-  const r = cv.getBoundingClientRect(), k = W / r.width;
+let target = null;     // {x, y} in world pixels
+let stick = null;      // {ox, oy, vx, vy, kx, ky} in screen (view) pixels
+let VW = 320, VH = 192, camX = 0, camY = 0;
+function toGame(e) {   // view pixels
+  const r = cv.getBoundingClientRect(), k = VW / r.width;
   return { x: (e.clientX - r.left) * k, y: (e.clientY - r.top) * k, k };
 }
+function resize() {
+  const r = cv.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const dpr = window.devicePixelRatio || 1;
+  const scale = Math.max(2, Math.round(Math.min(r.width, r.height) * dpr / 220));  // ~14 tiles across the short side
+  VW = Math.ceil(r.width * dpr / scale); VH = Math.ceil(r.height * dpr / scale);
+  cv.width = VW; cv.height = VH;
+  ctx.imageSmoothingEnabled = false;
+}
+addEventListener('resize', () => { if (screen === 'play') resize(); });
 cv.addEventListener('pointerdown', e => {
   if (screen !== 'play' || ptr || (e.pointerType === 'mouse' && e.button !== 0)) return;
   e.preventDefault(); cv.setPointerCapture?.(e.pointerId);
@@ -404,7 +435,7 @@ function endPointer(e, tapAllowed) {
   if (!ptr || e.pointerId !== ptr.id) return;
   if (tapAllowed && !ptr.drag && performance.now() - ptr.t0 < TAP_MS) {
     const g = toGame(e);
-    target = { x: Math.max(FW / 2, Math.min(W - FW / 2, g.x)), y: Math.max(28, Math.min(H - 2, g.y)) };
+    target = { x: g.x + camX, y: g.y + camY };
   }
   ptr = null; stick = null;
 }
@@ -416,21 +447,88 @@ function faceOf(vx, vy) { return Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 'left' 
 
 // ---------- 3. play: render ----------
 ctx.imageSmoothingEnabled = false;
-const floor = document.createElement('canvas'); floor.width = W; floor.height = H;
+// island: seeded so every player sees the same map
+const land = [], beach = [];
+const world = document.createElement('canvas'); world.width = WORLD_W; world.height = WORLD_H;
 (() => {
-  const f = floor.getContext('2d');
-  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  for (let ty = 0; ty < H / TILE; ty++) for (let tx = 0; tx < W / TILE; tx++) {
-    f.fillStyle = (tx + ty) % 2 ? '#4a6b45' : '#46663f';
-    f.fillRect(tx * TILE, ty * TILE, TILE, TILE);
-    for (let k = 0; k < 3; k++) {
-      f.fillStyle = rnd() > .5 ? '#55794f' : '#3d5a3a';
-      f.fillRect(tx * TILE + (rnd() * 14 | 0), ty * TILE + (rnd() * 14 | 0), 2, 1);
+  let seed = 20261106; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // value noise for a ragged coastline
+  const G = 6, gw = Math.ceil(MAP_W / G) + 2, gh = Math.ceil(MAP_H / G) + 2, grid = [];
+  for (let i = 0; i < gw * gh; i++) grid.push(rnd());
+  const sm = t => t * t * (3 - 2 * t);
+  const noise = (x, y) => {
+    const gx = x / G, gy = y / G, ix = Math.floor(gx), iy = Math.floor(gy), fx = sm(gx - ix), fy = sm(gy - iy);
+    const v = (a, b) => grid[(iy + b) * gw + (ix + a)];
+    return (v(0, 0) * (1 - fx) + v(1, 0) * fx) * (1 - fy) + (v(0, 1) * (1 - fx) + v(1, 1) * fx) * fy;
+  };
+  for (let y = 0; y < MAP_H; y++) {
+    land.push([]); beach.push([]);
+    for (let x = 0; x < MAP_W; x++) {
+      const d = Math.min(x, y, MAP_W - 1 - x, MAP_H - 1 - y);
+      land[y].push(d >= 4 + noise(x, y) * 5);
     }
   }
-  f.fillStyle = '#8b7d62';
-  for (let tx = 0; tx < W / TILE; tx++) f.fillRect(tx * TILE, 0, TILE - 1, 12);
+  const isLand = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H && land[y][x];
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+    let nearSea = false;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!isLand(x + dx, y + dy)) nearSea = true;
+    beach[y].push(land[y][x] && nearSea);
+  }
+  const f = world.getContext('2d');
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+    const px = x * TILE, py = y * TILE;
+    if (!land[y][x]) {
+      let shallow = false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isLand(x + dx, y + dy)) shallow = true;
+      f.fillStyle = shallow ? '#3f8fb0' : '#2a6f93'; f.fillRect(px, py, TILE, TILE);
+      if (shallow) {   // foam along the shore
+        f.fillStyle = '#d7eef5';
+        if (isLand(x, y - 1)) f.fillRect(px, py, TILE, 1);
+        if (isLand(x, y + 1)) f.fillRect(px, py + TILE - 1, TILE, 1);
+        if (isLand(x - 1, y)) f.fillRect(px, py, 1, TILE);
+        if (isLand(x + 1, y)) f.fillRect(px + TILE - 1, py, 1, TILE);
+      }
+      continue;
+    }
+    if (beach[y][x]) {
+      f.fillStyle = '#e3d29c'; f.fillRect(px, py, TILE, TILE);
+      for (let k = 0; k < 4; k++) { f.fillStyle = rnd() > .5 ? '#d3bf83' : '#efe2b6'; f.fillRect(px + (rnd() * 15 | 0), py + (rnd() * 15 | 0), 1, 1); }
+      continue;
+    }
+    f.fillStyle = (x + y) % 2 ? '#4a6b45' : '#46663f'; f.fillRect(px, py, TILE, TILE);
+    for (let k = 0; k < 3; k++) { f.fillStyle = rnd() > .5 ? '#55794f' : '#3d5a3a'; f.fillRect(px + (rnd() * 14 | 0), py + (rnd() * 14 | 0), 2, 1); }
+    const r = rnd();
+    if (r < .06) {            // small flowers
+      const c = ['#f2e15c', '#f5f5f5', '#e98aa6'][rnd() * 3 | 0];
+      const fx = px + 3 + (rnd() * 9 | 0), fy = py + 3 + (rnd() * 9 | 0);
+      f.fillStyle = c; f.fillRect(fx, fy, 1, 1); f.fillRect(fx + 3, fy + 2, 1, 1);
+    } else if (r < .09) {     // grass tuft
+      const fx = px + 4 + (rnd() * 7 | 0), fy = py + 5 + (rnd() * 7 | 0);
+      f.fillStyle = '#6a9a5c'; f.fillRect(fx, fy, 1, 3); f.fillRect(fx + 2, fy + 1, 1, 2); f.fillRect(fx - 2, fy + 1, 1, 2);
+    }
+  }
 })();
+function walkable(px, py) {
+  const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+  return tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H && land[ty][tx];
+}
+function canStand(x, y) {   // small box around the feet
+  return walkable(x - 5, y) && walkable(x + 5, y) && walkable(x - 5, y - 4) && walkable(x + 5, y - 4);
+}
+function drawWaves(now) {   // little moving highlights on visible sea tiles
+  const x0 = Math.floor(camX / TILE) - 1, y0 = Math.floor(camY / TILE) - 1;
+  const x1 = Math.ceil((camX + VW) / TILE) + 1, y1 = Math.ceil((camY + VH) / TILE) + 1;
+  ctx.fillStyle = 'rgba(220, 242, 250, .55)';
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const inMap = x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
+    if (inMap && land[y][x]) continue;
+    const h = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+    if (h % 5) continue;
+    const ph = (now / 900 + (h % 97) / 97) % 1;
+    const wx = x * TILE + 2 + (h % 7) + Math.round(Math.sin(ph * Math.PI * 2) * 2), wy = y * TILE + 4 + (h >> 3) % 8;
+    ctx.fillRect(wx, wy, 4, 1); ctx.fillRect(wx + 1, wy - 1, 2, 1);
+  }
+}
 
 function drawChar(c, x, y, dir, frame, slot, isMe) {
   const dx = Math.round(x - FW / 2), dy = Math.round(y - FH);
@@ -475,11 +573,16 @@ function frame(now) {
     me.m = vx !== 0 || vy !== 0;
     if (me.m) {
       me.dir = dir;
-      const n = Math.hypot(vx, vy);
-      me.x = Math.max(FW / 2, Math.min(W - FW / 2, me.x + vx / n * step));
-      me.y = Math.max(28, Math.min(H - 2, me.y + vy / n * step));
+      const n = Math.hypot(vx, vy), mx = vx / n * step, my = vy / n * step;
+      let moved = false;
+      if (canStand(me.x + mx, me.y)) { me.x += mx; moved = moved || Math.abs(mx) > 1e-3; }   // per-axis so you slide along the shore
+      if (canStand(me.x, me.y + my)) { me.y += my; moved = moved || Math.abs(my) > 1e-3; }
+      if (!moved) { me.m = false; if (target) target = null; }
       me.t += dt * (run ? 12 : 8);
-    } else me.t = 0;
+    }
+    if (!me.m) me.t = 0;
+    if (!canStand(me.x, me.y)) { me.x = WORLD_W / 2; me.y = WORLD_H / 2; }   // safety net: never stuck in the sea
+    camX = Math.round(me.x - VW / 2); camY = Math.round(me.y - 16 - VH / 2);
 
     // smooth other players toward their latest reported position
     for (const o of others.values()) {
@@ -489,7 +592,11 @@ function frame(now) {
       o.t = o.m ? o.t + dt * 8 : 0;
     }
 
-    ctx.drawImage(floor, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#2a6f93'; ctx.fillRect(0, 0, VW, VH);          // open sea beyond the map
+    ctx.setTransform(1, 0, 0, 1, -camX, -camY);                       // world space
+    ctx.drawImage(world, 0, 0);
+    drawWaves(now);
     if (target) {   // destination marker
       const tx = Math.round(target.x), ty = Math.round(target.y), b = (now / 300 | 0) % 2;
       ctx.fillStyle = '#fff6c2';
@@ -501,6 +608,7 @@ function frame(now) {
       ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false })),
     ].sort((a, b) => a.y - b.y);
     for (const p of list) drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);                               // screen space
     if (stick) {    // virtual stick
       ctx.save();
       ctx.globalAlpha = .55; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
