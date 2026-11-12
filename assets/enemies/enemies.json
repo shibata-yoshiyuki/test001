@@ -1,0 +1,67 @@
+{
+ "swampy": {
+  "file": "swampy.png",
+  "frameWidth": 16,
+  "frameHeight": 16,
+  "frames": 4,
+  "facing": "right",
+  "bbox": [
+   0,
+   3,
+   16,
+   16
+  ]
+ },
+ "goblin": {
+  "file": "goblin.png",
+  "frameWidth": 16,
+  "frameHeight": 16,
+  "frames": 4,
+  "facing": "right",
+  "bbox": [
+   4,
+   5,
+   14,
+   15
+  ]
+ },
+ "skelet": {
+  "file": "skelet.png",
+  "frameWidth": 16,
+  "frameHeight": 16,
+  "frames": 4,
+  "facing": "right",
+  "bbox": [
+   3,
+   1,
+   13,
+   15
+  ]
+ },
+ "necromancer": {
+  "file": "necromancer.png",
+  "frameWidth": 16,
+  "frameHeight": 23,
+  "frames": 4,
+  "facing": "right",
+  "bbox": [
+   1,
+   8,
+   14,
+   23
+  ]
+ },
+ "big_demon": {
+  "file": "big_demon.png",
+  "frameWidth": 32,
+  "frameHeight": 36,
+  "frames": 4,
+  "facing": "right",
+  "bbox": [
+   4,
+   6,
+   26,
+   34
+  ]
+ }
+}
