@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>ドット歩行テスト</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+1p:wght@400;700&display=swap">
@@ -22,7 +22,7 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); }
+html, body { margin: 0; background: var(--bg); color: var(--ink); touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   font: 14px/1.6 var(--body);
   padding-left: max(16px, env(safe-area-inset-left, 0px));
@@ -59,7 +59,9 @@ input[type=text] {
 .link { font: .9rem var(--body); color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
 .label { font-size: .75rem; letter-spacing: .08em; color: var(--muted); }
 /* full-screen play view: canvas fills the window, HUD floats on top */
-.play { position: fixed; inset: 0; z-index: 10; background: #1d4f6e; overflow: hidden; }
+.play { position: fixed; inset: 0; z-index: 10; background: #1d4f6e; overflow: hidden; touch-action: none; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.play * { touch-action: none; }
 canvas#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
 .hud-top, .hud-bottom {
   position: absolute; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start;
@@ -185,12 +187,20 @@ const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge i
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-06c';         // bump on every release; host and guests must match
+const VERSION = '2026-11-12a';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 6000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
 
 const $ = id => document.getElementById(id);
+// no zooming: pinch, Safari gestures, Ctrl+wheel and Ctrl +/- / 0 (double-tap zoom is off via touch-action in CSS)
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0', ';'].includes(e.key)) e.preventDefault();
+});
 $('ver').textContent = 'ページの版：' + VERSION;
 // stale-page check: browsers may keep an old copy of this page for a few minutes
 if (typeof fetch === 'function') fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => {
