@@ -171,6 +171,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   <div class="hud-bottom">
     <span class="chip buff" id="buff" hidden></span>
     <label class="chip"><input type="checkbox" id="run"> 走る</label>
+    <button class="chip" id="zoom">見え方：ふつう</button>
     <button class="chip" id="fs">全画面</button>
     <button class="chip" id="leave">退出</button>
   </div>
@@ -203,7 +204,7 @@ const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge i
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-16b';         // bump on every release; host and guests must match
+const VERSION = '2026-11-16c';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 6000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -1019,16 +1020,29 @@ function toGame(e) {   // view pixels
   const r = cv.getBoundingClientRect(), k = VW / r.width;
   return { x: (e.clientX - r.left) * k, y: (e.clientY - r.top) * k, k };
 }
+// how much of the map you see: game pixels across the short side of the screen (16 px = 1 tile)
+const VIEWS = [{ name: 'ちかい' }, { px: 340, name: 'ふつう' }, { name: 'ひろい' }];
+let viewIdx = 1;
+try { const v = +localStorage.getItem('view'); if (v >= 0 && v < VIEWS.length && localStorage.getItem('view') !== null) viewIdx = v; } catch (e) {}
 function resize() {
   const r = cv.getBoundingClientRect();
   if (!r.width || !r.height) return;
   const dpr = window.devicePixelRatio || 1;
-  const scale = Math.max(2, Math.round(Math.min(r.width, r.height) * dpr / 220));  // ~14 tiles across the short side
+  // whole-number scaling keeps the pixels crisp; the three levels are one step apart
+  const base = Math.max(2, Math.round(Math.min(r.width, r.height) * dpr / VIEWS[1].px));
+  const scale = Math.max(1, base + 1 - viewIdx);
   VW = Math.ceil(r.width * dpr / scale); VH = Math.ceil(r.height * dpr / scale);
   cv.width = VW; cv.height = VH;
   ctx.imageSmoothingEnabled = false;
 }
 addEventListener('resize', () => { if (screen === 'play') resize(); });
+$('zoom').textContent = '見え方：' + VIEWS[viewIdx].name;
+$('zoom').addEventListener('click', () => {
+  viewIdx = (viewIdx + 1) % VIEWS.length;
+  try { localStorage.setItem('view', String(viewIdx)); } catch (e) {}
+  $('zoom').textContent = '見え方：' + VIEWS[viewIdx].name;
+  resize();
+});
 cv.addEventListener('pointerdown', e => {
   if (screen === 'play' && e.pointerType === 'mouse' && e.button === 2) {   // PC: right click = shoot toward the cursor
     e.preventDefault();
