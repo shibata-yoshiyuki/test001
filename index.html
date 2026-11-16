@@ -103,6 +103,7 @@ button.chip { cursor: pointer; }
   background: rgba(214, 72, 64, .82); color: #fff; border: 3px solid rgba(255,255,255,.75);
   font: 1.05rem var(--display); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
 }
+.buff { color: #8ff0a4; }
 .atk span, .atk small { display: block; line-height: 1.15; }
 .atk span { font-size: .95rem; }
 .atk small { font: .72rem var(--body); opacity: .9; }
@@ -168,6 +169,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   <p class="banner" id="banner" aria-live="polite"></p>
   <button class="atk" id="atk" aria-label="攻撃（スペースキー）"><span id="atk-name">ナイフ</span><small id="atk-ammo"></small></button>
   <div class="hud-bottom">
+    <span class="chip buff" id="buff" hidden></span>
     <label class="chip"><input type="checkbox" id="run"> 走る</label>
     <button class="chip" id="fs">全画面</button>
     <button class="chip" id="leave">退出</button>
@@ -201,7 +203,7 @@ const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge i
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-16a';         // bump on every release; host and guests must match
+const VERSION = '2026-11-16b';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 6000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -231,7 +233,7 @@ const imgs = SHEETS.map(src => { const im = new Image(); im.src = src; return im
 
 // ---------- state ----------
 const me = { c: 0, x: WORLD_W / 2, y: WORLD_H / 2, dir: 'down', m: false, t: 0, held: new Set(), slot: 0,
-  life: LIFE_MAX, down: false, inv: false, ko: 0, aimX: 0, aimY: 1, lastShot: -1e9, atkT: -1e9, w: 'knife', ammo: 0 };
+  life: LIFE_MAX, down: false, inv: false, ko: 0, aimX: 0, aimY: 1, lastShot: -1e9, atkT: -1e9, w: 'knife', ammo: 0, fastUntil: 0 };
 const shots = new Map();           // id -> shot  (x,y = point on the ground; drawn 12px higher)
 // weapons (icons: 0x72 DungeonTileset II, CC0). kind: melee = arc in front, slam = ring around you, shot = projectile
 const WEAPONS = {
@@ -249,7 +251,14 @@ const W_IMGS = {};
 for (const k of ['knife', 'bow', 'arrow', 'throwing_axe', 'katana', 'big_hammer', 'red_magic_staff', 'green_magic_staff']) { const im = new Image(); im.src = 'assets/weapons/' + k + '.png'; W_IMGS[k] = im; }
 let fx = [];                       // melee / slam effects
 const pickups = new Map();         // id -> {id, w, x, y}
-let pickSeq = 0, nextPickSpawn = 0;
+let pickSeq = 0, nextPickSpawn = 0, nextItemSpawn = 0;
+// one food and one drink (from the おまけ set)
+const ITEMS = {
+  food:  { name: 'ケーキ',       img: 'pickup_food',  text: 'ライフが1回復！' },
+  drink: { name: 'メロンソーダ', img: 'pickup_drink', text: '10秒間、足が速くなる！' },
+};
+const FAST_MS = 10000, FAST_MULT = 1.6;
+const ITEM_IMGS = {}; for (const k in ITEMS) { const im = new Image(); im.src = 'assets/items/' + ITEMS[k].img + '.png'; ITEM_IMGS[k] = im; }
 let sparks = [];                   // hit effects
 let shotSeq = 0, atkHeld = false;
 const stats = new Map();           // host only: slot -> {life, invUntil, down, downUntil, ko}
@@ -268,7 +277,7 @@ let enemies = new Map();           // id -> {id, type, x, y, hp, maxHp, face, ..
 let enemySeq = 0;
 const game = { wave: 0, phase: 'wait', until: 0, queue: [], nextSpawn: 0, banner: '' };
 let lastUI = '', lastWeaponKey = '';
-const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9 });
+const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9, fastUntil: 0 });
 let screen = 'select';
 let peer = null, isHost = false, roomCode = '';
 let hostConn = null;               // client side: connection to host
@@ -409,7 +418,7 @@ function applyAll(ps) {
   const next = new Map();
   for (const p of ps) {
     if (p.slot === me.slot) {
-      if (p.life !== undefined) { me.life = p.life; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; if (WEAPONS[p.w]) { me.w = p.w; me.ammo = p.am | 0; } }
+      if (p.life !== undefined) { me.life = p.life; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; if (WEAPONS[p.w]) { me.w = p.w; me.ammo = p.am | 0; } me.fastUntil = performance.now() + (p.fs | 0); }
       continue;
     }
     const key = 's' + p.slot, prev = others.get(key);
@@ -421,12 +430,12 @@ function applyAll(ps) {
 }
 
 function myState() { return { slot: me.slot, c: me.c, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, m: me.m, ...(isHost ? statOut(me.slot) : {}) }; }
-function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, down: st.down, inv: now < st.invUntil, ko: st.ko, w: st.weapon, am: st.ammo } : {}; }
+function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, down: st.down, inv: now < st.invUntil, ko: st.ko, w: st.weapon, am: st.ammo, fs: Math.max(0, Math.round(st.fastUntil - now)) } : {}; }
 function broadcast(msg, exceptPeer) { for (const [id, { conn }] of conns) if (id !== exceptPeer && conn.open) conn.send(msg); }
 function otherBySlot(slot) { for (const o of others.values()) if (o.slot === slot) return o; return null; }
 let listSig = '';
 function syncFromStats() {    // host: copy authoritative battle state onto the drawn players
-  const mine = statOut(me.slot); Object.assign(me, mine); if (mine.w) { me.w = mine.w; me.ammo = mine.am; }
+  const mine = statOut(me.slot); Object.assign(me, mine); if (mine.w) { me.w = mine.w; me.ammo = mine.am; me.fastUntil = performance.now() + mine.fs; }
   for (const o of others.values()) Object.assign(o, statOut(o.slot));
   refreshListIfChanged();
 }
@@ -526,7 +535,12 @@ function hitEnemy(e, by, dmg, shotId, keep) {
   if (e.hp <= 0) {
     enemies.delete(e.id); if (st) st.ko++;
     if (T.boss) { toast(slotName(by) + 'がボスを倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
-    else if (Math.random() < 0.06) dropWeapon(e.x, e.y);
+    else {
+      const r = Math.random();
+      if (r < 0.06) dropWeapon(e.x, e.y);
+      else if (r < 0.14) dropItem('food', e.x, e.y);
+      else if (r < 0.20) dropItem('drink', e.x, e.y);
+    }
   }
   const msg = { t: 'ehit', id: shotId || '', keep: !!keep, eid: e.id, hp: e.hp, x: e.x, y: e.y - T.hh * .6 };
   broadcast(msg); onEhit(msg); syncFromStats();
@@ -594,18 +608,27 @@ function spawnPickup(w, x, y) {
   const id = ++pickSeq; pickups.set(id, { id, w, x, y }); return id;
 }
 function randomWeapon() { return PICK_WEAPONS[Math.random() * PICK_WEAPONS.length | 0]; }
-function dropWeapon(x, y) {
-  for (let i = 0; i < 12; i++) { const px = x + (Math.random() - .5) * 24 * (i > 0), py = y + (Math.random() - .5) * 16 * (i > 0); if (canStand(px, py)) { spawnPickup(randomWeapon(), px, py); return; } }
+function dropAt(key, x, y) {
+  for (let i = 0; i < 12; i++) { const px = x + (Math.random() - .5) * 24 * (i > 0), py = y + (Math.random() - .5) * 16 * (i > 0); if (canStand(px, py)) { spawnPickup(key, px, py); return; } }
 }
+function dropWeapon(x, y) { dropAt(randomWeapon(), x, y); }
+function dropItem(key, x, y) { dropAt(key, x, y); }
 function stepPickups(now) {      // host
   if (mode === 'pvp' && now >= nextPickSpawn) {
     nextPickSpawn = now + 9000;
-    if (pickups.size < 3) { const p = randomLandSpot(); spawnPickup(randomWeapon(), p.x, p.y); }
+    if ([...pickups.values()].filter(p => WEAPONS[p.w]).length < 3) { const p = randomLandSpot(); spawnPickup(randomWeapon(), p.x, p.y); }
+  }
+  if (mode === 'pvp' && now >= nextItemSpawn) {
+    nextItemSpawn = now + 12000;
+    if ([...pickups.values()].filter(p => ITEMS[p.w]).length < 2) { const p = randomLandSpot(); spawnPickup(Math.random() < .5 ? 'food' : 'drink', p.x, p.y); }
   }
   for (const pk of [...pickups.values()]) {
     for (const t of alivePlayers()) {
       if (Math.abs(t.x - pk.x) < 11 && Math.abs(t.y - pk.y) < 9) {
-        const st = stats.get(t.slot); st.weapon = pk.w; st.ammo = WEAPON_USES;
+        const st = stats.get(t.slot);
+        if (pk.w === 'food') { if (st.life >= LIFE_MAX) continue; st.life++; }     // full life: leave the cake for someone else
+        else if (pk.w === 'drink') st.fastUntil = now + FAST_MS;
+        else { st.weapon = pk.w; st.ammo = WEAPON_USES; }
         const msg = { t: 'pick', id: pk.id, slot: t.slot, w: pk.w };
         broadcast(msg); onPick(msg); syncFromStats();
         break;
@@ -615,6 +638,17 @@ function stepPickups(now) {      // host
 }
 function onPick(d) {
   pickups.delete(d.id);
+  const it = ITEMS[d.w];
+  if (it) {
+    const p = d.slot === me.slot ? me : otherBySlot(d.slot);
+    if (p) sparks.push({ x: p === me ? me.x : p.dx, y: (p === me ? me.y : p.dy) - 14, t: performance.now(), col: d.w === 'food' ? '255, 120, 140' : '120, 240, 140' });
+    if (d.slot === me.slot) {
+      if (d.w === 'food') me.life = Math.min(LIFE_MAX, me.life + 1); else me.fastUntil = performance.now() + FAST_MS;
+      toast(it.name + '：' + it.text);
+    } else if (p && d.w === 'drink') p.fs = FAST_MS;
+    refreshListIfChanged();
+    return;
+  }
   const W = WEAPONS[d.w]; if (!W) return;
   if (d.slot === me.slot) { me.w = d.w; me.ammo = WEAPON_USES; toast(W.name + 'を手に入れた！（' + WEAPON_USES + '回使えます）'); }
   else { const o = otherBySlot(d.slot); if (o) o.w = d.w; }
@@ -622,7 +656,7 @@ function onPick(d) {
 }
 function applyPickups(list) {
   pickups.clear();
-  for (const [id, wi, x, y] of list) if (PICK_WEAPONS[wi]) pickups.set(id, { id, w: PICK_WEAPONS[wi], x, y });
+  for (const [id, w, x, y] of list) if (WEAPONS[w] || ITEMS[w]) pickups.set(id, { id, w, x, y });
 }
 function spawnWaveRewards() {   // co-op: one weapon per player when a wave is cleared
   const ps = alivePlayers().length ? alivePlayers() : playerTargets();
@@ -869,7 +903,7 @@ setInterval(() => {
     const ps = [myState(), ...[...others.values()].map(o => ({ slot: o.slot, c: o.c, x: o.x, y: o.y, dir: o.dir, m: o.m, ...statOut(o.slot) }))];
     const g = gameOut();
     stepPickups(now);
-    broadcast({ t: 'all', ps, g, en: mode === 'coop' ? enemiesOut() : undefined, pk: [...pickups.values()].map(p => [p.id, PICK_WEAPONS.indexOf(p.w), Math.round(p.x), Math.round(p.y)]) });
+    broadcast({ t: 'all', ps, g, en: mode === 'coop' ? enemiesOut() : undefined, pk: [...pickups.values()].map(p => [p.id, p.w, Math.round(p.x), Math.round(p.y)]) });
     updateGameUI(g);
   } else if (hostConn) {
     if (now - lastHostMsg > TIMEOUT_MS) { endRoom('親との通信が途切れたため、部屋から出ました。'); return; }
@@ -896,7 +930,7 @@ function endRoom(msg) {
   conns.clear(); others = new Map(); me.held.clear(); target = null; stick = null; ptr = null;
   shots.clear(); sparks = []; stats.clear(); atkHeld = false;
   enemies = new Map(); game.queue = []; game.phase = 'wait'; lastUI = ''; banner(''); $('mode-chip').textContent = '';
-  Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0 });
+  Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0, fastUntil: 0 });
   fx = []; pickups.clear();
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
@@ -1192,8 +1226,13 @@ function drawWaves(now) {   // little moving highlights on visible sea tiles
 }
 
 const HEART = ['01010', '11111', '11111', '01110', '00100'];
+function drawSpeedTrail(x, y, now) {
+  ctx.fillStyle = 'rgba(200, 255, 210, .7)';
+  const ph = (now / 60 | 0) % 3;
+  for (let i = 0; i < 3; i++) ctx.fillRect(Math.round(x) - 9 + ((i + ph) % 3) * 6, Math.round(y) - 1 - i % 2, 3, 1);
+}
 function drawPickup(pk, now) {
-  const W = WEAPONS[pk.w], im = W_IMGS[W.icon]; if (!im || !im.complete || !im.naturalWidth) return;
+  const W = WEAPONS[pk.w], im = W ? W_IMGS[W.icon] : ITEM_IMGS[pk.w]; if (!im || !im.complete || !im.naturalWidth) return;
   const bob = Math.round(Math.sin(now / 250 + pk.id) * 2), sc = im.height > 24 ? .5 : 1;
   const w = Math.round(im.width * sc), h = Math.round(im.height * sc), x = Math.round(pk.x), y = Math.round(pk.y);
   ctx.fillStyle = 'rgba(255, 240, 150, .35)'; ctx.beginPath(); ctx.ellipse(x, y - 1, 8, 3, 0, 0, Math.PI * 2); ctx.fill();
@@ -1254,7 +1293,7 @@ function frame(now) {
     cardCtx.forEach((c, i) => { c.clearRect(0, 0, FW, FH); if (imgs[i].complete) c.drawImage(imgs[i], f * FW, 0, FW, FH, 0, 0, FW, FH); });
   }
   if (screen === 'play') {
-    const run = $('run').checked, speed = run ? 96 : 48;
+    const run = $('run').checked, fast = now < me.fastUntil, speed = (run ? 96 : 48) * (fast ? FAST_MULT : 1);
     // input priority: keys / pad  >  stick  >  tap target
     let vx = 0, vy = 0, step = speed * dt, dir = null;
     if (me.down) { /* can't move while down */ }
@@ -1292,6 +1331,9 @@ function frame(now) {
       e.dx += (e.x - e.dx) * k; e.dy += (e.y - e.dy) * k;
     }
     $('atk').disabled = me.down;
+    const fastLeft = Math.ceil((me.fastUntil - now) / 1000);
+    const buffTxt = fastLeft > 0 ? 'はやい！ のこり' + fastLeft + '秒' : '';
+    if ($('buff').textContent !== buffTxt) { $('buff').textContent = buffTxt; $('buff').hidden = !buffTxt; }
     const wkey = me.w + ':' + me.ammo;
     if (wkey !== lastWeaponKey) {
       lastWeaponKey = wkey;
@@ -1320,9 +1362,9 @@ function frame(now) {
     }
     const VD = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
     const list = [
-      { c: me.c, x: me.x, y: me.y, dir: me.dir, f: me.m ? Math.floor(me.t) % 4 : 0, slot: me.slot, me: true,
+      { c: me.c, x: me.x, y: me.y, dir: me.dir, f: me.m ? Math.floor(me.t) % 4 : 0, slot: me.slot, me: true, fast: now < me.fastUntil,
         p: { life: me.life, down: me.down, inv: me.inv, atkT: me.atkT, ax: me.aimX, ay: me.aimY } },
-      ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false,
+      ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false, fast: (o.fs | 0) > 0,
         p: { life: o.life, down: o.down, inv: o.inv, atkT: o.atkT, ax: (VD[o.dir] || [0, 1])[0], ay: (VD[o.dir] || [0, 1])[1] } })),
     ].sort((a, b) => a.y - b.y);
     // shots: shadow on the ground, shot at chest height
@@ -1369,7 +1411,7 @@ function frame(now) {
       }
       ctx.restore();
     }
-    const drawables = list.map(p => ({ y: p.y, draw: () => drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me, p.p) }));
+    const drawables = list.map(p => ({ y: p.y, draw: () => { if (p.fast && p.f % 2 === 1) drawSpeedTrail(p.x, p.y, now); drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me, p.p); } }));
     for (const e of enemies.values()) {
       const ex = isHost ? e.x : e.dx, ey = isHost ? e.y : e.dy;
       drawables.push({ y: ey, draw: () => drawEnemy(e, ex, ey, now) });
@@ -1380,7 +1422,7 @@ function frame(now) {
     sparks = sparks.filter(sp => now - sp.t < 300);
     for (const sp of sparks) {
       const k = (now - sp.t) / 300, r = 3 + k * 7;
-      ctx.fillStyle = 'rgba(255, 245, 200,' + (1 - k).toFixed(2) + ')';
+      ctx.fillStyle = 'rgba(' + (sp.col || '255, 245, 200') + ',' + (1 - k).toFixed(2) + ')';
       for (let a = 0; a < 8; a++) ctx.fillRect(Math.round(sp.x + Math.cos(a * Math.PI / 4) * r) - 1, Math.round(sp.y + Math.sin(a * Math.PI / 4) * r) - 1, 2, 2);
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);                               // screen space
