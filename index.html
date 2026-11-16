@@ -103,6 +103,9 @@ button.chip { cursor: pointer; }
   background: rgba(214, 72, 64, .82); color: #fff; border: 3px solid rgba(255,255,255,.75);
   font: 1.05rem var(--display); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
 }
+.atk span, .atk small { display: block; line-height: 1.15; }
+.atk span { font-size: .95rem; }
+.atk small { font: .72rem var(--body); opacity: .9; }
 .atk.on { background: rgba(255, 120, 100, .95); transform: scale(.94); }
 .atk:disabled { background: rgba(90, 90, 90, .7); }
 .life { color: #ff6b6b; letter-spacing: .05em; }
@@ -163,7 +166,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   </div>
   <p class="toast" id="play-msg" role="status"></p>
   <p class="banner" id="banner" aria-live="polite"></p>
-  <button class="atk" id="atk" aria-label="攻撃（スペースキー）">攻撃</button>
+  <button class="atk" id="atk" aria-label="攻撃（スペースキー）"><span id="atk-name">ナイフ</span><small id="atk-ammo"></small></button>
   <div class="hud-bottom">
     <label class="chip"><input type="checkbox" id="run"> 走る</label>
     <button class="chip" id="fs">全画面</button>
@@ -198,7 +201,7 @@ const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge i
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-12b';         // bump on every release; host and guests must match
+const VERSION = '2026-11-16a';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 6000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -228,8 +231,25 @@ const imgs = SHEETS.map(src => { const im = new Image(); im.src = src; return im
 
 // ---------- state ----------
 const me = { c: 0, x: WORLD_W / 2, y: WORLD_H / 2, dir: 'down', m: false, t: 0, held: new Set(), slot: 0,
-  life: LIFE_MAX, down: false, inv: false, ko: 0, aimX: 0, aimY: 1, lastShot: -1e9, atkT: -1e9 };
-const shots = new Map();           // id -> {id, slot, x, y, vx, vy, dist}   (x,y = point on the ground)
+  life: LIFE_MAX, down: false, inv: false, ko: 0, aimX: 0, aimY: 1, lastShot: -1e9, atkT: -1e9, w: 'knife', ammo: 0 };
+const shots = new Map();           // id -> shot  (x,y = point on the ground; drawn 12px higher)
+// weapons (icons: 0x72 DungeonTileset II, CC0). kind: melee = arc in front, slam = ring around you, shot = projectile
+const WEAPONS = {
+  knife:  { name: 'ナイフ',     icon: 'knife',             kind: 'melee', reach: 30, arc: 0.9, cd: 350, dmg: 1 },
+  bow:    { name: '弓',         icon: 'bow',               kind: 'shot', spd: 260, rng: 260, cd: 520, dmg: 1, pierce: true, proj: 'arrow' },
+  axe:    { name: '投げ斧',     icon: 'throwing_axe',      kind: 'shot', spd: 170, rng: 110, cd: 700, dmg: 2, pierce: true, boomerang: true, proj: 'axe' },
+  katana: { name: '刀',         icon: 'katana',            kind: 'melee', reach: 40, arc: 1.7, cd: 450, dmg: 2 },
+  hammer: { name: '大ハンマー', icon: 'big_hammer',        kind: 'slam', radius: 50, delay: 260, cd: 1000, dmg: 3 },
+  red:    { name: '赤い杖',     icon: 'red_magic_staff',   kind: 'shot', spd: 170, rng: 150, cd: 500, dmg: 1, spread: [-0.3, 0, 0.3], proj: 'orbR' },
+  green:  { name: '緑の杖',     icon: 'green_magic_staff', kind: 'shot', spd: 125, rng: 260, cd: 450, dmg: 1, homing: true, proj: 'orbG' },
+};
+const PICK_WEAPONS = ['bow', 'axe', 'katana', 'hammer', 'red', 'green'];
+const WEAPON_USES = 20;
+const W_IMGS = {};
+for (const k of ['knife', 'bow', 'arrow', 'throwing_axe', 'katana', 'big_hammer', 'red_magic_staff', 'green_magic_staff']) { const im = new Image(); im.src = 'assets/weapons/' + k + '.png'; W_IMGS[k] = im; }
+let fx = [];                       // melee / slam effects
+const pickups = new Map();         // id -> {id, w, x, y}
+let pickSeq = 0, nextPickSpawn = 0;
 let sparks = [];                   // hit effects
 let shotSeq = 0, atkHeld = false;
 const stats = new Map();           // host only: slot -> {life, invUntil, down, downUntil, ko}
@@ -247,8 +267,8 @@ const MAX_ALIVE = 24, ENEMY_BULLET = '#b45cff';
 let enemies = new Map();           // id -> {id, type, x, y, hp, maxHp, face, ...}  (host: authoritative, guest: interpolated copy)
 let enemySeq = 0;
 const game = { wave: 0, phase: 'wait', until: 0, queue: [], nextSpawn: 0, banner: '' };
-let lastUI = '';
-const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0 });
+let lastUI = '', lastWeaponKey = '';
+const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9 });
 let screen = 'select';
 let peer = null, isHost = false, roomCode = '';
 let hostConn = null;               // client side: connection to host
@@ -334,8 +354,10 @@ function joinRoom() {
         enterPlay();
         return;
       }
-      if (d.t === 'all') { lastHostMsg = performance.now(); applyAll(d.ps); if (d.en) applyEnemies(d.en); if (d.g) updateGameUI(d.g); }
+      if (d.t === 'all') { lastHostMsg = performance.now(); applyAll(d.ps); if (d.en) applyEnemies(d.en); if (d.g) updateGameUI(d.g); if (d.pk) applyPickups(d.pk); }
       else if (d.t === 'shot') addShot(d, true);
+      else if (d.t === 'atk') attackFx(d);
+      else if (d.t === 'pick') onPick(d);
       else if (d.t === 'ehit') onEhit(d);
       else if (d.t === 'hit') onHit(d);
       else if (d.t === 'respawn') onRespawn(d);
@@ -368,10 +390,8 @@ function onHostConnection(conn) {
   });
   conn.on('data', d => {
     const rec = conns.get(conn.peer); if (!rec) return;
-    if (d.t === 'shot') {                       // relay a client's shot to everyone else
-      const st = stats.get(rec.slot);
-      if (!st || st.down || d.slot !== rec.slot) return;
-      const sh = addShot(d); if (sh) broadcast({ t: 'shot', ...sh }, conn.peer);
+    if (d.t === 'atk') {                        // a guest attacked: the host decides with its own weapon record
+      performAttack({ id: String(d.id), slot: rec.slot, w: String(d.w), x: +d.x, y: +d.y, ax: +d.ax || 0, ay: +d.ay || 0 }, conn.peer);
       return;
     }
     if (d.t !== 's') return;
@@ -389,7 +409,7 @@ function applyAll(ps) {
   const next = new Map();
   for (const p of ps) {
     if (p.slot === me.slot) {
-      if (p.life !== undefined) { me.life = p.life; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; }
+      if (p.life !== undefined) { me.life = p.life; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; if (WEAPONS[p.w]) { me.w = p.w; me.ammo = p.am | 0; } }
       continue;
     }
     const key = 's' + p.slot, prev = others.get(key);
@@ -401,76 +421,222 @@ function applyAll(ps) {
 }
 
 function myState() { return { slot: me.slot, c: me.c, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, m: me.m, ...(isHost ? statOut(me.slot) : {}) }; }
-function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, down: st.down, inv: now < st.invUntil, ko: st.ko } : {}; }
+function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, down: st.down, inv: now < st.invUntil, ko: st.ko, w: st.weapon, am: st.ammo } : {}; }
 function broadcast(msg, exceptPeer) { for (const [id, { conn }] of conns) if (id !== exceptPeer && conn.open) conn.send(msg); }
 function otherBySlot(slot) { for (const o of others.values()) if (o.slot === slot) return o; return null; }
 let listSig = '';
 function syncFromStats() {    // host: copy authoritative battle state onto the drawn players
-  Object.assign(me, statOut(me.slot));
+  const mine = statOut(me.slot); Object.assign(me, mine); if (mine.w) { me.w = mine.w; me.ammo = mine.am; }
   for (const o of others.values()) Object.assign(o, statOut(o.slot));
   refreshListIfChanged();
 }
 function refreshListIfChanged() {
-  const sig = [me, ...others.values()].map(p => p.slot + ':' + p.life + ':' + p.down + ':' + p.ko).join('|');
+  const sig = [me, ...others.values()].map(p => p.slot + ':' + p.life + ':' + p.down + ':' + p.ko + ':' + (p === me ? me.w : p.w)).join('|');
   if (sig !== listSig) { listSig = sig; renderList(); }
 }
 
 // ---------- battle ----------
 function addShot(d, trusted) {
   const id = String(d.id), slot = d.slot | 0;
-  if (shots.has(id) || !(slot >= 1 && slot <= MAX || slot === 0 && trusted)) return null;
+  if (shots.has(id)) return null;
+  let W;
+  if (slot === 0) { if (!trusted) return null; W = { spd: +d.spd || 80, rng: +d.rng || 200, dmg: 1, proj: 'enemy' }; }
+  else { if (!(slot >= 1 && slot <= MAX)) return null; W = WEAPONS[d.w]; if (!W || W.kind !== 'shot') return null; }
   const v = Math.hypot(+d.vx, +d.vy) || 1;
-  const spd = slot === 0 ? (+d.spd || 80) : SHOT_SPEED, rng = slot === 0 ? (+d.rng || 200) : SHOT_RANGE;
-  const sh = { id, slot, x: +d.x, y: +d.y, vx: d.vx / v * spd, vy: d.vy / v * spd, dist: 0, spd, rng };
+  const sh = { id, slot, w: slot === 0 ? 'enemy' : d.w, x: +d.x, y: +d.y, vx: d.vx / v * W.spd, vy: d.vy / v * W.spd, dist: 0,
+    spd: W.spd, rng: W.rng, dmg: W.dmg, pierce: !!W.pierce, homing: !!W.homing, boom: !!W.boomerang, back: false, hits: new Set(), proj: W.proj, spin: 0 };
   if (!isFinite(sh.x) || !isFinite(sh.y)) return null;
   shots.set(id, sh);
-  if (slot !== me.slot) { const o = otherBySlot(slot); if (o) o.atkT = performance.now(); }
   return sh;
+}
+// draw / spawn what an attack looks like (everyone runs this; the host also decides the hits)
+function attackFx(a) {
+  const W = WEAPONS[a.w]; if (!W) return;
+  const now = performance.now(), base = Math.atan2(a.ay, a.ax);
+  if (a.slot !== me.slot) { const o = otherBySlot(a.slot); if (o) o.atkT = now; }
+  if (W.kind === 'shot') {
+    (W.spread || [0]).forEach((da, i) => {
+      const c = Math.cos(base + da), sn = Math.sin(base + da);
+      addShot({ id: a.id + ':' + a.w + ':' + i, slot: a.slot, w: a.w, x: a.x + c * 8, y: a.y + sn * 6, vx: c, vy: sn });
+    });
+  } else fx.push({ kind: W.kind, w: a.w, slot: a.slot, x: a.x, y: a.y, base, t: now });
 }
 function fire(aimX, aimY) {
   const now = performance.now();
-  if (screen !== 'play' || !peer || me.down || now - me.lastShot < SHOT_CD) return;
+  const W = WEAPONS[me.w] || WEAPONS.knife;
+  if (screen !== 'play' || !peer || me.down || now - me.lastShot < W.cd) return;
   if (aimX !== undefined) {
     const n = Math.hypot(aimX, aimY);
     if (n > 0.5) { me.aimX = aimX / n; me.aimY = aimY / n; me.dir = faceOf(aimX, aimY); }
   }
   me.lastShot = now; me.atkT = now;
-  const sh = addShot({ id: me.slot + '-' + (++shotSeq) + '-' + (now | 0), slot: me.slot, x: me.x + me.aimX * 8, y: me.y + me.aimY * 6, vx: me.aimX, vy: me.aimY });
-  if (!sh) return;
-  if (isHost) broadcast({ t: 'shot', ...sh });
-  else if (hostConn && hostConn.open) hostConn.send({ t: 'shot', ...sh });
+  const a = { id: me.slot + '-' + (++shotSeq) + '-' + (now | 0), slot: me.slot, w: me.w, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, ax: me.aimX, ay: me.aimY };
+  if (isHost) performAttack(a, null);
+  else {
+    attackFx(a);                                   // show it right away
+    if (me.w !== 'knife') { me.ammo--; if (me.ammo <= 0) { me.w = 'knife'; me.ammo = 0; } }
+    if (hostConn && hostConn.open) hostConn.send({ t: 'atk', ...a });
+  }
+}
+// host: resolve an attack with the weapon the host has on record
+function performAttack(a, fromPeer) {
+  const st = stats.get(a.slot), now = performance.now();
+  if (!st || st.down) return;
+  const wk = WEAPONS[st.weapon] ? st.weapon : 'knife', W = WEAPONS[wk];
+  if (now - st.lastAtk < W.cd * 0.75) return;      // too fast: ignore
+  st.lastAtk = now;
+  if (wk !== 'knife') { st.ammo--; if (st.ammo <= 0) { st.weapon = 'knife'; st.ammo = 0; } }
+  const att = { ...a, w: wk };
+  broadcast({ t: 'atk', ...att }, wk === a.w ? fromPeer : null);   // the attacker already drew it, unless the weapon differs
+  attackFx(att);
+  if (W.kind === 'melee') resolveMelee(att, W, now);
+  else if (W.kind === 'slam') setTimeout(() => resolveSlam(att, W), W.delay);
+  syncFromStats();
+}
+function angleDiff(a, b) { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d); }
+function resolveMelee(att, W, now) {
+  const ox = att.x, oy = att.y - 12, base = Math.atan2(att.ay, att.ax);
+  const inArc = (tx, ty, rad) => {
+    const dx = tx - ox, dy = ty - oy, d = Math.hypot(dx, dy);
+    if (d > W.reach + rad) return false;
+    return d < rad + 3 || angleDiff(Math.atan2(dy, dx), base) <= W.arc;
+  };
+  if (mode === 'coop') {
+    for (const e of [...enemies.values()]) { const T = ENEMY_TYPES[e.type]; if (inArc(e.x, e.y - T.hh / 2, T.hw)) hitEnemy(e, att.slot, W.dmg, '', true); }
+  } else {
+    for (const t of playerTargets()) if (t.slot !== att.slot && inArc(t.x, t.y - 12, 7)) damagePlayer(t.slot, t.x - att.x, t.y - att.y, att.slot, '', now, true);
+  }
+}
+function resolveSlam(att, W) {
+  if (!isHost) return;
+  const st = stats.get(att.slot); if (!st || st.down) return;
+  const p = att.slot === me.slot ? me : otherBySlot(att.slot); if (!p) return;
+  const now = performance.now(), cx = p.x, cy = p.y - 8;
+  if (mode === 'coop') {
+    for (const e of [...enemies.values()]) { const T = ENEMY_TYPES[e.type]; if (Math.hypot(e.x - cx, e.y - T.hh / 2 - cy) <= W.radius + T.hw) hitEnemy(e, att.slot, W.dmg, '', true); }
+  } else {
+    for (const t of playerTargets()) if (t.slot !== att.slot && Math.hypot(t.x - cx, t.y - 12 - cy) <= W.radius + 6) damagePlayer(t.slot, t.x - cx, t.y - cy, att.slot, '', now, true);
+  }
+}
+function hitEnemy(e, by, dmg, shotId, keep) {
+  const T = ENEMY_TYPES[e.type];
+  e.hp -= dmg;
+  if (shotId && !keep) shots.delete(shotId);
+  const st = stats.get(by);
+  if (e.hp <= 0) {
+    enemies.delete(e.id); if (st) st.ko++;
+    if (T.boss) { toast(slotName(by) + 'がボスを倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
+    else if (Math.random() < 0.06) dropWeapon(e.x, e.y);
+  }
+  const msg = { t: 'ehit', id: shotId || '', keep: !!keep, eid: e.id, hp: e.hp, x: e.x, y: e.y - T.hh * .6 };
+  broadcast(msg); onEhit(msg); syncFromStats();
+}
+function nearestFoe(sh, maxD) {    // for homing shots
+  let best = null, bd = maxD;
+  if (mode === 'coop') {
+    for (const e of enemies.values()) { const x = isHost ? e.x : e.dx, y = isHost ? e.y : e.dy, d = Math.hypot(x - sh.x, y - sh.y); if (d < bd) { bd = d; best = { x, y }; } }
+  } else {
+    const cand = [{ slot: me.slot, x: me.x, y: me.y, down: me.down }, ...[...others.values()].map(o => ({ slot: o.slot, x: o.dx, y: o.dy, down: o.down }))];
+    for (const c of cand) { if (c.slot === sh.slot || c.down) continue; const d = Math.hypot(c.x - sh.x, c.y - sh.y); if (d < bd) { bd = d; best = c; } }
+  }
+  return best;
 }
 function stepShots(dt, now) {
   for (const sh of shots.values()) {
-    sh.x += sh.vx * dt; sh.y += sh.vy * dt; sh.dist += sh.spd * dt;
-    if (sh.dist > sh.rng) { shots.delete(sh.id); continue; }
+    if (sh.homing) {
+      const f = nearestFoe(sh, 140);
+      if (f) {
+        const cur = Math.atan2(sh.vy, sh.vx), want = Math.atan2(f.y - sh.y, f.x - sh.x);
+        let d = want - cur; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+        const na = cur + Math.max(-4.5 * dt, Math.min(4.5 * dt, d));
+        sh.vx = Math.cos(na) * sh.spd; sh.vy = Math.sin(na) * sh.spd;
+      }
+    }
+    if (sh.boom && sh.back) {      // fly back to the thrower
+      const o = sh.slot === me.slot ? me : otherBySlot(sh.slot);
+      const ox = o ? (o === me ? me.x : o.dx) : sh.x, oy = o ? (o === me ? me.y : o.dy) : sh.y, d = Math.hypot(ox - sh.x, oy - sh.y);
+      if (!o || d < 10) { shots.delete(sh.id); continue; }
+      sh.vx = (ox - sh.x) / d * sh.spd; sh.vy = (oy - sh.y) / d * sh.spd;
+    }
+    sh.x += sh.vx * dt; sh.y += sh.vy * dt; sh.dist += sh.spd * dt; sh.spin += dt * 18;
+    if (obstacleAt(sh.x, sh.y)) {  // trees and rocks stop shots
+      if (sh.boom && !sh.back) { sh.back = true; sh.hits.clear(); } else { shots.delete(sh.id); continue; }
+    }
+    if (sh.dist > sh.rng) {
+      if (sh.boom && !sh.back) { sh.back = true; sh.hits.clear(); }
+      else if (!sh.boom || sh.dist > sh.rng * 3.5) { shots.delete(sh.id); continue; }
+    }
     if (!isHost) continue;                      // only the host decides hits
-    const oy = sh.y - 12;                       // where the orb is drawn
+    const oy = sh.y - 12;                       // where the shot is drawn
     if (sh.slot !== 0 && mode === 'coop') {     // co-op: player shots hit enemies only
-      for (const e of enemies.values()) {
+      for (const e of [...enemies.values()]) {
+        if (sh.hits.has('e' + e.id)) continue;
         const T = ENEMY_TYPES[e.type];
         if (Math.abs(sh.x - e.x) <= T.hw + 3 && oy >= e.y - T.hh - 6 && oy <= e.y + 4) {
-          e.hp--; shots.delete(sh.id);
-          const st = stats.get(sh.slot);
-          if (e.hp <= 0) { enemies.delete(e.id); if (st) st.ko++; if (T.boss) toast(slotName(sh.slot) + 'がボスを倒した！'); }
-          const msg = { t: 'ehit', id: sh.id, eid: e.id, hp: e.hp, x: e.x, y: e.y - T.hh * .6 };
-          broadcast(msg); onEhit(msg); syncFromStats();
-          break;
+          sh.hits.add('e' + e.id);
+          hitEnemy(e, sh.slot, sh.dmg, sh.id, sh.pierce);
+          if (!sh.pierce) break;
         }
       }
       continue;
     }
     for (const t of playerTargets()) {
-      if (t.slot === sh.slot) continue;
+      if (t.slot === sh.slot || sh.hits.has('p' + t.slot)) continue;
       if (Math.abs(sh.x - t.x) <= 9 && oy >= t.y - 30 && oy <= t.y + 2) {
-        if (damagePlayer(t.slot, sh.vx, sh.vy, sh.slot, sh.id, now)) break;
+        if (damagePlayer(t.slot, sh.vx, sh.vy, sh.slot, sh.id, now, sh.pierce)) { sh.hits.add('p' + t.slot); if (!sh.pierce) break; }
       }
+    }
+  }
+}
+// ---------- weapons on the ground ----------
+function spawnPickup(w, x, y) {
+  if (pickups.size >= 10) pickups.delete(pickups.keys().next().value);
+  const id = ++pickSeq; pickups.set(id, { id, w, x, y }); return id;
+}
+function randomWeapon() { return PICK_WEAPONS[Math.random() * PICK_WEAPONS.length | 0]; }
+function dropWeapon(x, y) {
+  for (let i = 0; i < 12; i++) { const px = x + (Math.random() - .5) * 24 * (i > 0), py = y + (Math.random() - .5) * 16 * (i > 0); if (canStand(px, py)) { spawnPickup(randomWeapon(), px, py); return; } }
+}
+function stepPickups(now) {      // host
+  if (mode === 'pvp' && now >= nextPickSpawn) {
+    nextPickSpawn = now + 9000;
+    if (pickups.size < 3) { const p = randomLandSpot(); spawnPickup(randomWeapon(), p.x, p.y); }
+  }
+  for (const pk of [...pickups.values()]) {
+    for (const t of alivePlayers()) {
+      if (Math.abs(t.x - pk.x) < 11 && Math.abs(t.y - pk.y) < 9) {
+        const st = stats.get(t.slot); st.weapon = pk.w; st.ammo = WEAPON_USES;
+        const msg = { t: 'pick', id: pk.id, slot: t.slot, w: pk.w };
+        broadcast(msg); onPick(msg); syncFromStats();
+        break;
+      }
+    }
+  }
+}
+function onPick(d) {
+  pickups.delete(d.id);
+  const W = WEAPONS[d.w]; if (!W) return;
+  if (d.slot === me.slot) { me.w = d.w; me.ammo = WEAPON_USES; toast(W.name + 'を手に入れた！（' + WEAPON_USES + '回使えます）'); }
+  else { const o = otherBySlot(d.slot); if (o) o.w = d.w; }
+  refreshListIfChanged();
+}
+function applyPickups(list) {
+  pickups.clear();
+  for (const [id, wi, x, y] of list) if (PICK_WEAPONS[wi]) pickups.set(id, { id, w: PICK_WEAPONS[wi], x, y });
+}
+function spawnWaveRewards() {   // co-op: one weapon per player when a wave is cleared
+  const ps = alivePlayers().length ? alivePlayers() : playerTargets();
+  for (let i = 0; i < stats.size; i++) {
+    const p = ps[i % ps.length];
+    for (let k = 0; k < 20; k++) {
+      const a = Math.random() * Math.PI * 2, x = p.x + Math.cos(a) * (24 + Math.random() * 24), y = p.y + Math.sin(a) * (18 + Math.random() * 18);
+      if (canStand(x, y)) { spawnPickup(randomWeapon(), x, y); break; }
     }
   }
 }
 function playerTargets() { return [{ slot: me.slot, x: me.x, y: me.y }, ...[...others.values()].map(o => ({ slot: o.slot, x: o.x, y: o.y }))]; }
 // host: one point of damage. by = shooter slot, 0 = enemy. Returns true if it landed.
-function damagePlayer(slot, kx, ky, by, shotId, now) {
+function damagePlayer(slot, kx, ky, by, shotId, now, keep) {
   const st = stats.get(slot);
   if (!st || st.down || now < st.invUntil) return false;
   st.life = Math.max(0, st.life - 1); st.invUntil = now + INV_MS;
@@ -480,7 +646,7 @@ function damagePlayer(slot, kx, ky, by, shotId, now) {
     const bySt = stats.get(by); if (by && bySt) bySt.ko++;
   }
   const v = Math.hypot(kx, ky) || 1;
-  const msg = { t: 'hit', id: shotId || '', victim: slot, by, life: st.life, kx: kx / v, ky: ky / v };
+  const msg = { t: 'hit', id: shotId || '', keep: !!keep, victim: slot, by, life: st.life, kx: kx / v, ky: ky / v };
   broadcast(msg); onHit(msg); syncFromStats();
   return true;
 }
@@ -489,7 +655,7 @@ function slotName(slot) {
   const o = otherBySlot(slot); return 'P' + slot + (o ? '（' + (NAMES[o.c] || '？') + '）' : '');
 }
 function onHit(d) {
-  const sh = shots.get(String(d.id)); shots.delete(String(d.id));
+  if (!d.keep) shots.delete(String(d.id));
   const victim = d.victim === me.slot ? me : otherBySlot(d.victim);
   if (victim) sparks.push({ x: victim === me ? me.x : victim.dx, y: (victim === me ? me.y : victim.dy) - 12, t: performance.now() });
   if (d.victim === me.slot) {
@@ -516,7 +682,7 @@ function onRespawn(d) {
 }
 // ---------- enemies ----------
 function onEhit(d) {
-  shots.delete(String(d.id));
+  if (!d.keep) shots.delete(String(d.id));
   sparks.push({ x: +d.x, y: +d.y, t: performance.now() });
   const e = enemies.get(d.eid);
   if (e) { e.hp = d.hp; e.flash = performance.now(); if (d.hp <= 0 && !isHost) enemies.delete(d.eid); }
@@ -527,8 +693,8 @@ function alivePlayers() {
 }
 function enemyShot(e, vx, vy, spd, rng) {
   const T = ENEMY_TYPES[e.type];
-  const sh = addShot({ id: 'e-' + (++shotSeq), slot: 0, x: e.x, y: e.y - (T.boss ? 6 : 0), vx, vy, spd, rng }, true);
-  if (sh) broadcast({ t: 'shot', ...sh });
+  const d = { id: 'e-' + (++shotSeq), slot: 0, x: e.x, y: e.y - (T.boss ? 6 : 0), vx, vy, spd, rng };
+  if (addShot(d, true)) broadcast({ t: 'shot', ...d });
 }
 function spawnEnemy(type, mult) {
   const T = ENEMY_TYPES[type], ps = alivePlayers();
@@ -578,9 +744,16 @@ function stepEnemies(dt, now) {
     }
     const n = Math.hypot(vx, vy);
     if (n > 0) {
-      const sp = T.spd * dt * Math.min(1, n), mx = vx / n * sp, my = vy / n * sp, r = T.boss ? 10 : 4;
+      if (e.detT > 0) { e.detT -= dt; vx = e.detX; vy = e.detY; }       // walking around a tree / rock
+      const nn = Math.hypot(vx, vy) || 1;
+      const sp = T.spd * dt * Math.min(1, n), mx = vx / nn * sp, my = vy / nn * sp, r = T.boss ? 10 : 4;
+      const ox = e.x, oy = e.y;
       if (canStandE(e.x + mx, e.y, r)) e.x += mx;
       if (canStandE(e.x, e.y + my, r)) e.y += my;
+      if (Math.hypot(e.x - ox, e.y - oy) < sp * .3) {
+        e.stuck = (e.stuck || 0) + dt;
+        if (e.stuck > .25 && !(e.detT > 0)) { const sg = Math.random() < .5 ? 1 : -1; e.detX = -vy / nn * sg; e.detY = vx / nn * sg; e.detT = .7; e.stuck = 0; }
+      } else e.stuck = 0;
       if (Math.abs(vx) > .05) e.face = vx < 0 ? -1 : 1;
     }
     // touching a player hurts
@@ -617,12 +790,14 @@ function stepWaves(now) {        // host, co-op only
     }
     const anyAlive = [...stats.values()].some(st => !st.down);
     if (!anyAlive && nPlayers) {
-      game.phase = 'over'; game.until = now + 6000; game.queue = []; enemies.clear();
+      game.phase = 'over'; game.until = now + 6000; game.queue = []; enemies.clear(); pickups.clear();
+      for (const st of stats.values()) { st.weapon = 'knife'; st.ammo = 0; }
       for (const id of [...shots.keys()]) if (shots.get(id).slot === 0) shots.delete(id);
     } else if (!game.queue.length && !enemies.size) {
       game.phase = 'clear'; game.until = now + 5000;
       for (const st of stats.values()) if (!st.down) st.life = Math.min(LIFE_MAX, st.life + 1);   // small heal between waves
       reviveAll(now);
+      spawnWaveRewards();
     }
   } else if (game.phase === 'clear' && now >= game.until) {
     game.wave++; game.phase = 'rest'; game.until = now + 2000;
@@ -659,7 +834,7 @@ function updateGameUI(g) {
   lastUI = key;
   if (g.ph === 'rest') banner('WAVE ' + g.w + '<small>' + (g.t || 1) + '秒後に開始' + (g.w % 5 === 0 ? '　ボス出現！' : '') + '</small>');
   else if (g.ph === 'fight') banner('WAVE ' + g.w + '<small>スタート！</small>', 1500);
-  else if (g.ph === 'clear') banner('WAVE ' + g.w + ' クリア！<small>倒れた仲間が復活／ライフ＋1</small>', 4000);
+  else if (g.ph === 'clear') banner('WAVE ' + g.w + ' クリア！<small>倒れた仲間が復活／ライフ＋1／武器が落ちた！</small>', 4000);
   else if (g.ph === 'over') banner('全滅…<small>WAVE ' + g.w + ' まで到達。もう一度 WAVE 1 から</small>', 5500);
 }
 
@@ -693,7 +868,8 @@ setInterval(() => {
     syncFromStats();
     const ps = [myState(), ...[...others.values()].map(o => ({ slot: o.slot, c: o.c, x: o.x, y: o.y, dir: o.dir, m: o.m, ...statOut(o.slot) }))];
     const g = gameOut();
-    broadcast({ t: 'all', ps, g, en: mode === 'coop' ? enemiesOut() : undefined });
+    stepPickups(now);
+    broadcast({ t: 'all', ps, g, en: mode === 'coop' ? enemiesOut() : undefined, pk: [...pickups.values()].map(p => [p.id, PICK_WEAPONS.indexOf(p.w), Math.round(p.x), Math.round(p.y)]) });
     updateGameUI(g);
   } else if (hostConn) {
     if (now - lastHostMsg > TIMEOUT_MS) { endRoom('親との通信が途切れたため、部屋から出ました。'); return; }
@@ -720,7 +896,8 @@ function endRoom(msg) {
   conns.clear(); others = new Map(); me.held.clear(); target = null; stick = null; ptr = null;
   shots.clear(); sparks = []; stats.clear(); atkHeld = false;
   enemies = new Map(); game.queue = []; game.phase = 'wait'; lastUI = ''; banner(''); $('mode-chip').textContent = '';
-  Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0 });
+  Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0 });
+  fx = []; pickups.clear();
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   document.body.style.overflow = '';
@@ -761,7 +938,8 @@ function renderList() {
     const lv = p.life === undefined ? LIFE_MAX : p.life;
     life.className = 'life' + (p.down ? ' down' : '');
     life.textContent = p.down ? 'ダウン' : '♥'.repeat(lv) + '♡'.repeat(Math.max(0, LIFE_MAX - lv));
-    li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : '') + '　', life, '　撃破 ' + (p.ko | 0));
+    const wk = p.you ? me.w : p.w;
+    li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : '') + '　', life, '　撃破 ' + (p.ko | 0) + (wk && wk !== 'knife' ? '　' + WEAPONS[wk].name : ''));
     return li;
   }));
 }
@@ -857,7 +1035,7 @@ function faceOf(vx, vy) { return Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 'left' 
 // ---------- 3. play: render ----------
 ctx.imageSmoothingEnabled = false;
 // island: seeded so every player sees the same map
-const land = [], beach = [];
+const land = [], beach = [], obst = [];   // obst: 0 none, 1 rock, 2 tree
 const world = document.createElement('canvas'); world.width = WORLD_W; world.height = WORLD_H;
 (() => {
   let seed = 20261106; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -882,6 +1060,25 @@ const world = document.createElement('canvas'); world.width = WORLD_W; world.hei
     let nearSea = false;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!isLand(x + dx, y + dy)) nearSea = true;
     beach[y].push(land[y][x] && nearSea);
+  }
+  // trees and rocks: own seed so the ground pattern above stays the same
+  let s2 = 4242; const r2 = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+  const fgrid = []; for (let i = 0; i < gw * gh; i++) fgrid.push(r2());
+  const forest = (x, y) => {
+    const gx = x / G, gy = y / G, ix = Math.floor(gx), iy = Math.floor(gy), fx = sm(gx - ix), fy = sm(gy - iy);
+    const v = (a, b) => fgrid[(iy + b) * gw + (ix + a)];
+    return (v(0, 0) * (1 - fx) + v(1, 0) * fx) * (1 - fy) + (v(0, 1) * (1 - fx) + v(1, 1) * fx) * fy;
+  };
+  for (let y = 0; y < MAP_H; y++) {
+    obst.push([]);
+    for (let x = 0; x < MAP_W; x++) {
+      let o = 0;
+      if (land[y][x] && !beach[y][x] && Math.hypot(x - MAP_W / 2, y - MAP_H / 2) > 6) {
+        const pTree = forest(x, y) > .64 ? .3 : .035, r = r2();
+        if (r < pTree) o = 2; else if (r < pTree + .025) o = 1;
+      }
+      obst[y].push(o);
+    }
   }
   const f = world.getContext('2d');
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
@@ -915,11 +1112,66 @@ const world = document.createElement('canvas'); world.width = WORLD_W; world.hei
       const fx = px + 4 + (rnd() * 7 | 0), fy = py + 5 + (rnd() * 7 | 0);
       f.fillStyle = '#6a9a5c'; f.fillRect(fx, fy, 1, 3); f.fillRect(fx + 2, fy + 1, 1, 2); f.fillRect(fx - 2, fy + 1, 1, 2);
     }
+    if (obst[y][x]) {        // ground shadow under trees / rocks
+      f.fillStyle = 'rgba(20, 40, 18, .35)';
+      f.fillRect(px + 2, py + 12, 12, 3); f.fillRect(px + 4, py + 15, 8, 1);
+    }
   }
 })();
+// pixel-art sprites for trees (2 kinds) and rocks (2 kinds), drawn once
+function makeSprite(w, h, paint) { const c = document.createElement('canvas'); c.width = w; c.height = h; paint(c.getContext('2d')); return c; }
+function blobPaint(g, blobs, w, h, colors) {
+  const inside = (x, y) => blobs.some(([cx, cy, r]) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!inside(x, y)) continue;
+    const edge = !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1);
+    const lit = -(x - colors.lx) * .6 - (y - colors.ly) * .8;
+    g.fillStyle = edge ? colors.edge : lit > 6 ? colors.hi : lit > 0 ? colors.mid : (y > colors.lowY ? colors.low : colors.base);
+    if (!edge && lit > 3 && lit <= 6 && (x + y) % 2) g.fillStyle = colors.hi;   // dither
+    g.fillRect(x, y, 1, 1);
+  }
+}
+const TREE_SPRITES = [
+  [[13, 12, 10], [7, 16, 7], [19, 16, 7], [13, 6, 6]],
+  [[13, 11, 9], [8, 15, 6], [18, 15, 6], [13, 18, 6]],
+].map(blobs => makeSprite(26, 34, g => {
+  g.fillStyle = '#4a321d'; g.fillRect(10, 22, 6, 12);
+  g.fillStyle = '#6b4a2b'; g.fillRect(11, 22, 4, 11);
+  g.fillStyle = '#8a6338'; g.fillRect(11, 23, 1, 9);
+  blobPaint(g, blobs, 26, 26, { edge: '#22401f', hi: '#78b55a', mid: '#4f8a42', base: '#3c6e35', low: '#305a2c', lx: 13, ly: 11, lowY: 19 });
+}));
+const ROCK_SPRITES = [false, true].map(moss => makeSprite(16, 13, g => {
+  blobPaint(g, [[8, 8, 6], [5, 9, 4], [11, 9, 4]], 16, 13, { edge: '#474c52', hi: '#bfc4c9', mid: '#959aa1', base: '#7b8087', low: '#666b72', lx: 7, ly: 6, lowY: 9 });
+  if (moss) { g.fillStyle = '#6e8f4e'; [[6, 3], [7, 3], [8, 3], [5, 4], [9, 4], [7, 4]].forEach(([x, y]) => g.fillRect(x, y, 1, 1)); }
+}));
+// blocking boxes inside a tile (x0, y0, x1, y1)
+const OB_BOX = { 1: [1, 4, 15, 15], 2: [4, 8, 12, 16] };
+function obstacleAt(px, py) {
+  const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+  if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
+  const o = obst[ty][tx]; if (!o) return false;
+  const b = OB_BOX[o], lx = px - tx * TILE, ly = py - ty * TILE;
+  return lx >= b[0] && lx < b[2] && ly >= b[1] && ly < b[3];
+}
+function pushObstacleDrawables(list) {     // only those near the screen
+  const x0 = Math.floor(camX / TILE) - 1, y0 = Math.floor(camY / TILE) - 1;
+  const x1 = Math.ceil((camX + VW) / TILE) + 1, y1 = Math.ceil((camY + VH) / TILE) + 3;
+  for (let y = Math.max(0, y0); y < Math.min(MAP_H, y1); y++) for (let x = Math.max(0, x0); x < Math.min(MAP_W, x1); x++) {
+    const o = obst[y][x]; if (!o) continue;
+    const v = ((x * 7 + y * 13) % 2);
+    const bx = x * TILE + 8, by = y * TILE + 15;
+    if (o === 2) list.push({ y: by, draw: () => {
+      const behind = me.y < by && me.y > by - 30 && Math.abs(me.x - bx) < 15;   // you are behind this tree: see through it
+      if (behind) ctx.globalAlpha = .5;
+      ctx.drawImage(TREE_SPRITES[v], bx - 13, by - 33);
+      ctx.globalAlpha = 1;
+    } });
+    else list.push({ y: by, draw: () => ctx.drawImage(ROCK_SPRITES[v], bx - 8, by - 12) });
+  }
+}
 function walkable(px, py) {
   const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
-  return tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H && land[ty][tx];
+  return tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H && land[ty][tx] && !obstacleAt(px, py);
 }
 function canStand(x, y) {   // small box around the feet
   return walkable(x - 5, y) && walkable(x + 5, y) && walkable(x - 5, y - 4) && walkable(x + 5, y - 4);
@@ -940,6 +1192,14 @@ function drawWaves(now) {   // little moving highlights on visible sea tiles
 }
 
 const HEART = ['01010', '11111', '11111', '01110', '00100'];
+function drawPickup(pk, now) {
+  const W = WEAPONS[pk.w], im = W_IMGS[W.icon]; if (!im || !im.complete || !im.naturalWidth) return;
+  const bob = Math.round(Math.sin(now / 250 + pk.id) * 2), sc = im.height > 24 ? .5 : 1;
+  const w = Math.round(im.width * sc), h = Math.round(im.height * sc), x = Math.round(pk.x), y = Math.round(pk.y);
+  ctx.fillStyle = 'rgba(255, 240, 150, .35)'; ctx.beginPath(); ctx.ellipse(x, y - 1, 8, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.drawImage(im, x - Math.round(w / 2), y - h - 4 + bob, w, h);
+  if ((now / 400 | 0) % 2) { ctx.fillStyle = '#fff8c8'; ctx.fillRect(x + 5, y - h - 6 + bob, 1, 1); ctx.fillRect(x - 6, y - 8 + bob, 1, 1); }
+}
 function drawEnemy(e, x, y, now) {
   const T = ENEMY_TYPES[e.type], im = ENEMY_IMGS[e.type], sc = T.sc;
   const w = T.fw * sc, h = T.fh * sc, dx = Math.round(x - w / 2), dy = Math.round(y - h);
@@ -1032,6 +1292,12 @@ function frame(now) {
       e.dx += (e.x - e.dx) * k; e.dy += (e.y - e.dy) * k;
     }
     $('atk').disabled = me.down;
+    const wkey = me.w + ':' + me.ammo;
+    if (wkey !== lastWeaponKey) {
+      lastWeaponKey = wkey;
+      $('atk-name').textContent = (WEAPONS[me.w] || WEAPONS.knife).name;
+      $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : 'のこり ' + me.ammo;
+    }
 
     // smooth other players toward their latest reported position
     for (const o of others.values()) {
@@ -1059,22 +1325,57 @@ function frame(now) {
       ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false,
         p: { life: o.life, down: o.down, inv: o.inv, atkT: o.atkT, ax: (VD[o.dir] || [0, 1])[0], ay: (VD[o.dir] || [0, 1])[1] } })),
     ].sort((a, b) => a.y - b.y);
-    // shots: shadow on the ground, orb at chest height
+    // shots: shadow on the ground, shot at chest height
     for (const sh of shots.values()) {
-      const sx = Math.round(sh.x), sy = Math.round(sh.y);
+      const sx = Math.round(sh.x), sy = Math.round(sh.y), ang = Math.atan2(sh.vy, sh.vx);
       ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(sx - 2, sy - 1, 5, 2);
+      if (sh.proj === 'arrow' || sh.proj === 'axe') {
+        const im = W_IMGS[sh.proj === 'arrow' ? 'arrow' : 'throwing_axe'];
+        if (im.complete && im.naturalWidth) {
+          ctx.save(); ctx.translate(sx, sy - 12);
+          ctx.rotate(sh.proj === 'arrow' ? ang + Math.PI / 2 : sh.spin);
+          ctx.drawImage(im, -Math.round(im.width / 2), -Math.round(im.height / 2));
+          ctx.restore();
+        }
+        continue;
+      }
       const v = Math.hypot(sh.vx, sh.vy) || 1, ux = sh.vx / v, uy = sh.vy / v;
-      ctx.fillStyle = sh.slot === 0 ? ENEMY_BULLET : (SLOT_COLORS[sh.slot - 1] || '#fff');
+      const col = sh.proj === 'enemy' ? ENEMY_BULLET : sh.proj === 'orbR' ? '#ff5a4f' : sh.proj === 'orbG' ? '#5fe07a' : (SLOT_COLORS[sh.slot - 1] || '#fff');
+      ctx.fillStyle = col;
       ctx.globalAlpha = .45; ctx.fillRect(Math.round(sx - ux * 5) - 1, Math.round(sy - 12 - uy * 5) - 1, 3, 3);
       ctx.globalAlpha = 1;
       ctx.fillRect(sx - 2, sy - 14, 5, 5);
       ctx.fillStyle = '#fff'; ctx.fillRect(sx - 1, sy - 13, 3, 3);
+    }
+    // melee arcs and hammer shockwaves
+    fx = fx.filter(f => now - f.t < (f.kind === 'slam' ? WEAPONS[f.w].delay + 260 : 170));
+    for (const f of fx) {
+      const W = WEAPONS[f.w], k = (now - f.t);
+      const o = f.slot === me.slot ? me : otherBySlot(f.slot);
+      const cx = f.kind === 'slam' && o ? (o === me ? me.x : o.dx) : f.x, cy = (f.kind === 'slam' && o ? (o === me ? me.y : o.dy) : f.y) - 12;
+      ctx.save();
+      if (f.kind === 'melee') {
+        const p = k / 170, r = W.reach * (0.65 + 0.35 * p);
+        ctx.globalAlpha = 1 - p; ctx.strokeStyle = f.w === 'katana' ? '#d8f6ff' : '#ffffff'; ctx.lineWidth = f.w === 'katana' ? 3 : 2;
+        const a0 = f.base - W.arc, a1 = f.base - W.arc + (W.arc * 2) * Math.min(1, p * 1.8);
+        ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
+      } else if (k >= W.delay) {
+        const p = (k - W.delay) / 260;
+        ctx.globalAlpha = 1 - p; ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(cx, cy + 10, W.radius * (0.3 + 0.7 * p), W.radius * (0.3 + 0.7 * p) * .6, 0, 0, Math.PI * 2); ctx.stroke();
+      } else {                     // wind-up: hammer raised
+        const im = W_IMGS.big_hammer;
+        if (im.complete) { ctx.translate(cx, cy - 6); ctx.rotate(-0.6 + k / W.delay * 1.2); ctx.drawImage(im, -5, -30, 10, 37); }
+      }
+      ctx.restore();
     }
     const drawables = list.map(p => ({ y: p.y, draw: () => drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me, p.p) }));
     for (const e of enemies.values()) {
       const ex = isHost ? e.x : e.dx, ey = isHost ? e.y : e.dy;
       drawables.push({ y: ey, draw: () => drawEnemy(e, ex, ey, now) });
     }
+    pushObstacleDrawables(drawables);
+    for (const pk of pickups.values()) drawables.push({ y: pk.y, draw: () => drawPickup(pk, now) });
     drawables.sort((a, b) => a.y - b.y).forEach(d => d.draw());
     sparks = sparks.filter(sp => now - sp.t < 300);
     for (const sp of sparks) {

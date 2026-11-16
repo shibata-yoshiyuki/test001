@@ -1,0 +1,7 @@
+武器の画像は次の素材集から取り込んでいます（ファイル名の先頭の weapon_ を外しています）。
+
+  素材名 : 16x16 DungeonTileset II（v1.7）
+  作者   : 0x72（Robert）
+  配布元 : https://0x72.itch.io/dungeontileset-ii
+  ライセンス : CC0 1.0 Universal（パブリックドメイン。クレジット表記は不要、改変・商用利用可）
+               https://creativecommons.org/publicdomain/zero/1.0/
