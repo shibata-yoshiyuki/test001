@@ -204,8 +204,8 @@ const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge i
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-16c';         // bump on every release; host and guests must match
-const SEND_MS = 66, TIMEOUT_MS = 6000;
+const VERSION = '2026-11-19a';         // bump on every release; host and guests must match
+const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
 
@@ -312,7 +312,7 @@ function busy(b) { $('create').disabled = b; $('create-coop').disabled = b; $('j
 
 function errorText(type) {
   return ({
-    'peer-unavailable': 'その部屋コードの部屋が見つかりません。コードを確認するか、部屋が開いているか親に確認してください。',
+    'peer-unavailable': 'その部屋コードの部屋が見つかりません。コードが合っているか、部屋の親がゲーム画面を開いたままか（別のアプリに切り替えると部屋が見えなくなることがあります）を確認してください。',
     'network': '通信サーバーにつながりません。ネットワークを確認してもう一度試してください。',
     'server-error': '通信サーバーでエラーが起きました。少し待ってからもう一度試してください。',
     'browser-incompatible': 'このブラウザは対応していません。Chrome・Safari・Edgeの最新版で開いてください。',
@@ -345,20 +345,27 @@ $('code-in').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(
 function joinRoom() {
   const code = $('code-in').value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '');
   if (!/^\d{4}$/.test(code)) { lobbyMsg('部屋コードは4桁の数字です。', true); return; }
-  busy(true); lobbyMsg('部屋に入っています…');
+  busy(true); lobbyMsg('通信サーバーにつないでいます…');
   const p = new Peer();
-  let giveUp = 0;
+  let giveUp = 0, slowMsg = 0;
   p.on('open', () => {
+    lobbyMsg('部屋の親につないでいます…');
     const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION } });
-    giveUp = setTimeout(() => { if (!hostConn) { p.destroy(); busy(false); lobbyMsg('部屋に入れませんでした。コードを確認してもう一度試してください。', true); } }, 10000);
+    slowMsg = setTimeout(() => { if (!hostConn) lobbyMsg('部屋の親につないでいます…（時間がかかっています。親の画面が開いたままか確認してください）'); }, 8000);
+    giveUp = setTimeout(() => {
+      if (hostConn) return;
+      p.destroy(); busy(false);
+      lobbyMsg('部屋に入れませんでした。①部屋の親がゲーム画面を開いたままか（別のアプリに切り替えていないか）②部屋コードが合っているか を確認して、もう一度「入る」を押してください。', true);
+    }, JOIN_TIMEOUT_MS);
+    conn.on('open', () => lobbyMsg('部屋の親とつながりました。準備中…'));
     conn.on('data', d => {
-      if (d.t === 'full') { clearTimeout(giveUp); p.destroy(); busy(false); lobbyMsg('この部屋は満員です（最大4人）。', true); return; }
+      if (d.t === 'full') { clearTimeout(giveUp); clearTimeout(slowMsg); p.destroy(); busy(false); lobbyMsg('この部屋は満員です（最大4人）。', true); return; }
       if (d.t === 'version') {
-        clearTimeout(giveUp); p.destroy(); busy(false);
+        clearTimeout(giveUp); clearTimeout(slowMsg); p.destroy(); busy(false);
         lobbyMsg('部屋の親とページの版が違います（親：' + d.v + '／あなた：' + VERSION + '）。親もあなたも、ページを再読み込みしてから入り直してください。', true); return;
       }
       if (d.t === 'welcome') {
-        clearTimeout(giveUp);
+        clearTimeout(giveUp); clearTimeout(slowMsg);
         peer = p; isHost = false; roomCode = code; hostConn = conn; me.slot = d.slot; mode = d.mode === 'coop' ? 'coop' : 'pvp';
         me.x = d.x; me.y = d.y; lastHostMsg = performance.now();
         enterPlay();
@@ -376,7 +383,7 @@ function joinRoom() {
   });
   p.on('error', err => {
     if (peer === p) { console.warn('peer error (still in room)', err.type); return; }  // in room: the host timeout decides
-    clearTimeout(giveUp); p.destroy(); busy(false); lobbyMsg(errorText(err.type), true);
+    clearTimeout(giveUp); clearTimeout(slowMsg); p.destroy(); busy(false); lobbyMsg(errorText(err.type), true);
   });
 }
 
@@ -396,6 +403,7 @@ function onHostConnection(conn) {
     stats.set(slot, freshStat());
     others.set(conn.peer, { ...st, dx: st.x, dy: st.y, t: 0 });
     conn.send({ t: 'welcome', slot, x: st.x, y: st.y, mode });
+    toast('P' + slot + '（' + (NAMES[st.c] || '？') + '）が入りました');
     renderList();
   });
   conn.on('data', d => {
@@ -409,7 +417,7 @@ function onHostConnection(conn) {
     const o = others.get(conn.peer);
     if (o) Object.assign(o, { c: d.c | 0, x: +d.x, y: +d.y, dir: ROWS[d.dir] !== undefined ? d.dir : 'down', m: !!d.m });
   });
-  const drop = () => { const rec = conns.get(conn.peer); if (conns.delete(conn.peer)) { others.delete(conn.peer); if (rec) stats.delete(rec.slot); renderList(); } };
+  const drop = () => { const rec = conns.get(conn.peer); if (conns.delete(conn.peer)) { others.delete(conn.peer); if (rec) { stats.delete(rec.slot); toast('P' + rec.slot + 'が部屋から出ました'); } renderList(); } };
   conn.on('close', drop);
   conn.on('error', drop);
 }
@@ -881,11 +889,11 @@ function randomLandSpot() {
   }
   return { x: WORLD_W / 2, y: WORLD_H / 2 };
 }
-setInterval(() => {
+function netTick() {
   if (screen !== 'play' || !peer) return;
   const now = performance.now();
   if (isHost) {
-    for (const [id, rec] of conns) if (now - rec.last > TIMEOUT_MS) { rec.conn.close(); conns.delete(id); others.delete(id); stats.delete(rec.slot); renderList(); }
+    for (const [id, rec] of conns) if (now - rec.last > TIMEOUT_MS) { rec.conn.close(); conns.delete(id); others.delete(id); stats.delete(rec.slot); toast('P' + rec.slot + 'との通信が途切れました'); renderList(); }
     for (const [slot, st] of stats) {            // revive downed players
       if (st.down && now >= st.downUntil) {
         st.down = false; st.life = LIFE_MAX; st.invUntil = now + 1500;
@@ -910,13 +918,22 @@ setInterval(() => {
     if (now - lastHostMsg > TIMEOUT_MS) { endRoom('親との通信が途切れたため、部屋から出ました。'); return; }
     if (hostConn.open) hostConn.send({ t: 's', ...myState() });
   }
-}, SEND_MS);
+}
+(() => {
+  let worker = null;
+  try {
+    const src = 'setInterval(() => postMessage(0), ' + SEND_MS + ');';
+    worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    worker.onmessage = netTick;
+  } catch (e) { worker = null; }
+  if (!worker) setInterval(netTick, SEND_MS);
+})();
 
 function enterPlay() {
   busy(false);
   $('room-code').textContent = roomCode;
   $('copy-msg').textContent = '';
-  toast(isHost ? 'この部屋コードか招待リンクを、一緒に遊ぶ人に送ってください。' : '部屋に入りました。');
+  toast(isHost ? 'この部屋コードか招待リンクを、一緒に遊ぶ人に送ってください。（スマホの親は、送ったらすぐこの画面に戻ってください）' : '部屋に入りました。');
   updateGameUI(isHost ? gameOut() : { m: mode, w: 1, ph: 'rest', t: 0, left: 0 });
   history.replaceState(null, '', '?room=' + roomCode);
   renderList();
@@ -946,6 +963,12 @@ function toast(text) {
   toastTimer = setTimeout(() => { el.classList.add('fade'); setTimeout(() => { if (el.classList.contains('fade')) el.textContent = ''; }, 700); }, 5000);
 }
 // browser full screen (not available on iPhone; the play view already fills the window)
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (screen === 'play' && peer && Date.now() - hiddenAt > 3000)
+    toast(isHost ? '部屋の親が別の画面に切り替えると、全員の通信が止まります。親はこの画面を開いたままにしてください。' : '別の画面に切り替えている間、通信が止まっていました。');
+});
 const fsBtn = $('fs');
 if (!document.documentElement.requestFullscreen) fsBtn.hidden = true;
 fsBtn.addEventListener('click', () => {
