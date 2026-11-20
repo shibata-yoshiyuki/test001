@@ -204,7 +204,7 @@ const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge i
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-19a';         // bump on every release; host and guests must match
+const VERSION = '2026-11-20a';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -274,6 +274,17 @@ const ENEMY_TYPES = [
 ];
 const ENEMY_IMGS = ENEMY_TYPES.map(t => { const im = new Image(); im.src = 'assets/enemies/' + t.key + '.png'; return im; });
 const MAX_ALIVE = 24, ENEMY_BULLET = '#b45cff';
+// every wave ends with one boss: that wave's enemy, made big
+const BOSS_NAMES = ['キングスライム', 'ゴブリンキング', 'ガイコツ大将', '大まじない師', '魔王'];
+const BOSS_HP = [12, 14, 18, 16, 30];
+function bossTypeFor(w) { return (w - 1) % ENEMY_TYPES.length; }
+// size / hit box of an enemy (bosses are drawn 3x, the demon 2x)
+function eDims(e) {
+  const T = ENEMY_TYPES[e.type];
+  if (!e.boss) return { sc: T.sc, hw: T.hw, hh: T.hh, r: 4 };
+  const sc = T.boss ? T.sc : 3, k = sc / T.sc;
+  return { sc, hw: T.hw * k, hh: T.hh * k, r: 10 };
+}
 let enemies = new Map();           // id -> {id, type, x, y, hp, maxHp, face, ...}  (host: authoritative, guest: interpolated copy)
 let enemySeq = 0;
 const game = { wave: 0, phase: 'wait', until: 0, queue: [], nextSpawn: 0, banner: '' };
@@ -520,7 +531,7 @@ function resolveMelee(att, W, now) {
     return d < rad + 3 || angleDiff(Math.atan2(dy, dx), base) <= W.arc;
   };
   if (mode === 'coop') {
-    for (const e of [...enemies.values()]) { const T = ENEMY_TYPES[e.type]; if (inArc(e.x, e.y - T.hh / 2, T.hw)) hitEnemy(e, att.slot, W.dmg, '', true); }
+    for (const e of [...enemies.values()]) { const D = eDims(e); if (inArc(e.x, e.y - D.hh / 2, D.hw)) hitEnemy(e, att.slot, W.dmg, '', true); }
   } else {
     for (const t of playerTargets()) if (t.slot !== att.slot && inArc(t.x, t.y - 12, 7)) damagePlayer(t.slot, t.x - att.x, t.y - att.y, att.slot, '', now, true);
   }
@@ -531,7 +542,7 @@ function resolveSlam(att, W) {
   const p = att.slot === me.slot ? me : otherBySlot(att.slot); if (!p) return;
   const now = performance.now(), cx = p.x, cy = p.y - 8;
   if (mode === 'coop') {
-    for (const e of [...enemies.values()]) { const T = ENEMY_TYPES[e.type]; if (Math.hypot(e.x - cx, e.y - T.hh / 2 - cy) <= W.radius + T.hw) hitEnemy(e, att.slot, W.dmg, '', true); }
+    for (const e of [...enemies.values()]) { const D = eDims(e); if (Math.hypot(e.x - cx, e.y - D.hh / 2 - cy) <= W.radius + D.hw) hitEnemy(e, att.slot, W.dmg, '', true); }
   } else {
     for (const t of playerTargets()) if (t.slot !== att.slot && Math.hypot(t.x - cx, t.y - 12 - cy) <= W.radius + 6) damagePlayer(t.slot, t.x - cx, t.y - cy, att.slot, '', now, true);
   }
@@ -543,7 +554,7 @@ function hitEnemy(e, by, dmg, shotId, keep) {
   const st = stats.get(by);
   if (e.hp <= 0) {
     enemies.delete(e.id); if (st) st.ko++;
-    if (T.boss) { toast(slotName(by) + 'がボスを倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
+    if (e.boss) { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
     else {
       const r = Math.random();
       if (r < 0.06) dropWeapon(e.x, e.y);
@@ -551,7 +562,7 @@ function hitEnemy(e, by, dmg, shotId, keep) {
       else if (r < 0.20) dropItem('drink', e.x, e.y);
     }
   }
-  const msg = { t: 'ehit', id: shotId || '', keep: !!keep, eid: e.id, hp: e.hp, x: e.x, y: e.y - T.hh * .6 };
+  const msg = { t: 'ehit', id: shotId || '', keep: !!keep, eid: e.id, hp: e.hp, x: e.x, y: e.y - eDims(e).hh * .6 };
   broadcast(msg); onEhit(msg); syncFromStats();
 }
 function nearestFoe(sh, maxD) {    // for homing shots
@@ -594,8 +605,8 @@ function stepShots(dt, now) {
     if (sh.slot !== 0 && mode === 'coop') {     // co-op: player shots hit enemies only
       for (const e of [...enemies.values()]) {
         if (sh.hits.has('e' + e.id)) continue;
-        const T = ENEMY_TYPES[e.type];
-        if (Math.abs(sh.x - e.x) <= T.hw + 3 && oy >= e.y - T.hh - 6 && oy <= e.y + 4) {
+        const D = eDims(e);
+        if (Math.abs(sh.x - e.x) <= D.hw + 3 && oy >= e.y - D.hh - 6 && oy <= e.y + 4) {
           sh.hits.add('e' + e.id);
           hitEnemy(e, sh.slot, sh.dmg, sh.id, sh.pierce);
           if (!sh.pierce) break;
@@ -735,46 +746,46 @@ function alivePlayers() {
   return playerTargets().filter(t => { const st = stats.get(t.slot); return st && !st.down; });
 }
 function enemyShot(e, vx, vy, spd, rng) {
-  const T = ENEMY_TYPES[e.type];
-  const d = { id: 'e-' + (++shotSeq), slot: 0, x: e.x, y: e.y - (T.boss ? 6 : 0), vx, vy, spd, rng };
+  const d = { id: 'e-' + (++shotSeq), slot: 0, x: e.x, y: e.y - (e.boss ? 6 : 0), vx, vy, spd, rng };
   if (addShot(d, true)) broadcast({ t: 'shot', ...d });
 }
-function spawnEnemy(type, mult) {
+function spawnEnemy(type, mult, boss, lv) {
   const T = ENEMY_TYPES[type], ps = alivePlayers();
   let spot = null;
   for (let i = 0; i < 400 && !spot; i++) {
     const p = randomLandSpot();
     const dmin = ps.length ? Math.min(...ps.map(q => Math.hypot(q.x - p.x, q.y - p.y))) : 999;
-    if (dmin > 170 && dmin < 340 && canStandE(p.x, p.y, T.boss ? 10 : 4)) spot = p;
+    if (dmin > 170 && dmin < 340 && canStandE(p.x, p.y, boss ? 10 : 4)) spot = p;
   }
   if (!spot) spot = randomLandSpot();
-  const hp = Math.ceil(T.hp * mult);
-  const e = { id: ++enemySeq, type, x: spot.x, y: spot.y, hp, maxHp: hp, face: 1, cd: 1.5 + Math.random(), wx: 0, wy: 0, wt: 0, pat: 0 };
+  const hp = Math.ceil((boss ? BOSS_HP[type] : T.hp) * mult);
+  const e = { id: ++enemySeq, type, boss: !!boss, lv: lv || 1, x: spot.x, y: spot.y, hp, maxHp: hp, face: 1, cd: boss ? 2 : 1.5 + Math.random(), wx: 0, wy: 0, wt: 0, pat: 0 };
   enemies.set(e.id, e);
   return e;
 }
 function stepEnemies(dt, now) {
   const ps = alivePlayers(), list = [...enemies.values()];
   for (const e of list) {
-    const T = ENEMY_TYPES[e.type];
+    const T = ENEMY_TYPES[e.type], D = eDims(e);
     let tgt = null, best = 1e9;
     for (const p of ps) { const d = Math.hypot(p.x - e.x, p.y - e.y); if (d < best) { best = d; tgt = p; } }
     let vx = 0, vy = 0;
     if (tgt) {
       const ux = (tgt.x - e.x) / (best || 1), uy = (tgt.y - e.y) / (best || 1);
-      if (T.shooter) {             // keep some distance and shoot
+      if (e.boss) {                // boss: chase (the sorcerer keeps away) and alternate ring / 3-way shots
+        if (T.shooter && best < 90) { vx = -ux; vy = -uy; } else { vx = ux; vy = uy; }
+        e.cd -= dt;
+        if (e.cd <= 0) {
+          e.cd = 3.2; e.pat = (e.pat + 1) % 2;
+          const ring = Math.min(14, 6 + e.lv);
+          if (e.pat) { for (let a = 0; a < ring; a++) { const r = a / ring * Math.PI * 2; enemyShot(e, Math.cos(r), Math.sin(r), 70, 230); } }
+          else { const b = Math.atan2(uy, ux); for (const da of [-.3, 0, .3]) enemyShot(e, Math.cos(b + da), Math.sin(b + da), 95, 240); }
+        }
+      } else if (T.shooter) {      // keep some distance and shoot
         if (best < 70) { vx = -ux; vy = -uy; } else if (best > 115) { vx = ux; vy = uy; } else { vx = -uy * .6; vy = ux * .6; }
         e.cd -= dt;
         if (e.cd <= 0 && best < 180) { e.cd = 2.4; enemyShot(e, ux, uy, 85, 210); }
       } else { vx = ux; vy = uy; }
-      if (T.boss) {
-        e.cd -= dt;
-        if (e.cd <= 0) {
-          e.cd = 3.2; e.pat = (e.pat + 1) % 2;
-          if (e.pat) { for (let a = 0; a < 12; a++) { const r = a / 12 * Math.PI * 2; enemyShot(e, Math.cos(r), Math.sin(r), 70, 230); } }
-          else { const b = Math.atan2(uy, ux); for (const da of [-.3, 0, .3]) enemyShot(e, Math.cos(b + da), Math.sin(b + da), 95, 240); }
-        }
-      }
     } else {                       // nobody to chase: wander
       e.wt -= dt;
       if (e.wt <= 0) { const r = Math.random() * Math.PI * 2; e.wx = Math.cos(r); e.wy = Math.sin(r); e.wt = 1.5 + Math.random() * 2; }
@@ -789,7 +800,7 @@ function stepEnemies(dt, now) {
     if (n > 0) {
       if (e.detT > 0) { e.detT -= dt; vx = e.detX; vy = e.detY; }       // walking around a tree / rock
       const nn = Math.hypot(vx, vy) || 1;
-      const sp = T.spd * dt * Math.min(1, n), mx = vx / nn * sp, my = vy / nn * sp, r = T.boss ? 10 : 4;
+      const sp = T.spd * (e.boss ? .85 : 1) * dt * Math.min(1, n), mx = vx / nn * sp, my = vy / nn * sp, r = D.r;
       const ox = e.x, oy = e.y;
       if (canStandE(e.x + mx, e.y, r)) e.x += mx;
       if (canStandE(e.x, e.y + my, r)) e.y += my;
@@ -801,7 +812,7 @@ function stepEnemies(dt, now) {
     }
     // touching a player hurts
     for (const p of ps) {
-      if (Math.abs(p.x - e.x) < T.hw + 5 && Math.abs(p.y - e.y) < (T.boss ? 16 : 8)) damagePlayer(p.slot, p.x - e.x, p.y - e.y, 0, '', now);
+      if (Math.abs(p.x - e.x) < D.hw + 5 && Math.abs(p.y - e.y) < (e.boss ? 16 : 8)) damagePlayer(p.slot, p.x - e.x, p.y - e.y, 0, '', now);
     }
   }
 }
@@ -809,8 +820,7 @@ function waveQueue(w, nPlayers) {
   const mult = 1 + 0.5 * (nPlayers - 1), tier = 1 + Math.floor((w - 1) / 5) * 0.5;
   const q = [];
   const pool = [0]; if (w >= 2) pool.push(1); if (w >= 3) pool.push(2); if (w >= 4) pool.push(3);
-  let count = Math.round((3 + w * 2) * mult);
-  if (w % 5 === 0) { q.push({ type: 4, mult: mult * tier }); count = Math.round(count / 2); }
+  const count = Math.round((3 + w * 2) * mult);
   for (let i = 0; i < count; i++) q.push({ type: pool[Math.random() * pool.length | 0], mult: tier });
   return q;
 }
@@ -827,8 +837,8 @@ function stepWaves(now) {        // host, co-op only
   const nPlayers = stats.size;
   if (game.phase === 'rest' && now >= game.until) {
     game.phase = 'fight'; game.queue = waveQueue(game.wave, nPlayers); game.nextSpawn = now;
-  } else if (game.phase === 'fight') {
-    if (game.queue.length && now >= game.nextSpawn && enemies.size < MAX_ALIVE) {
+  } else if (game.phase === 'fight' || game.phase === 'boss') {
+    if (game.phase === 'fight' && game.queue.length && now >= game.nextSpawn && enemies.size < MAX_ALIVE) {
       const q = game.queue.shift(); spawnEnemy(q.type, q.mult); game.nextSpawn = now + 600;
     }
     const anyAlive = [...stats.values()].some(st => !st.down);
@@ -836,7 +846,12 @@ function stepWaves(now) {        // host, co-op only
       game.phase = 'over'; game.until = now + 6000; game.queue = []; enemies.clear(); pickups.clear();
       for (const st of stats.values()) { st.weapon = 'knife'; st.ammo = 0; }
       for (const id of [...shots.keys()]) if (shots.get(id).slot === 0) shots.delete(id);
-    } else if (!game.queue.length && !enemies.size) {
+    } else if (game.phase === 'fight' && !game.queue.length && !enemies.size) {
+      // all normal enemies gone: the boss comes out alone
+      const mult = 1 + 0.5 * (nPlayers - 1), tier = 1 + Math.floor((game.wave - 1) / 5) * 0.5, bt = bossTypeFor(game.wave);
+      spawnEnemy(bt, mult * tier, true, game.wave);
+      game.phase = 'boss'; game.bossName = BOSS_NAMES[bt];
+    } else if (game.phase === 'boss' && !enemies.size) {
       game.phase = 'clear'; game.until = now + 5000;
       for (const st of stats.values()) if (!st.down) st.life = Math.min(LIFE_MAX, st.life + 1);   // small heal between waves
       reviveAll(now);
@@ -850,14 +865,14 @@ function stepWaves(now) {        // host, co-op only
 }
 function gameOut() {
   if (mode !== 'coop') return { m: 'pvp' };
-  return { m: 'coop', w: game.wave, ph: game.phase, t: Math.max(0, Math.ceil((game.until - performance.now()) / 1000)), left: game.queue.length + enemies.size };
+  return { m: 'coop', w: game.wave, ph: game.phase, t: Math.max(0, Math.ceil((game.until - performance.now()) / 1000)), left: game.queue.length + enemies.size, bn: game.bossName || '' };
 }
-function enemiesOut() { return [...enemies.values()].map(e => [e.id, e.type, Math.round(e.x), Math.round(e.y), e.hp, e.face, e.maxHp]); }
+function enemiesOut() { return [...enemies.values()].map(e => [e.id, e.type, Math.round(e.x), Math.round(e.y), e.hp, e.face, e.maxHp, e.boss ? 1 : 0]); }
 function applyEnemies(list) {     // guest: follow the host's enemies
   const next = new Map();
-  for (const [id, type, x, y, hp, face, maxHp] of list) {
+  for (const [id, type, x, y, hp, face, maxHp, boss] of list) {
     const prev = enemies.get(id);
-    next.set(id, { id, type, x, y, hp, face, maxHp, dx: prev ? prev.dx : x, dy: prev ? prev.dy : y, flash: prev ? prev.flash : 0 });
+    next.set(id, { id, type, x, y, hp, face, maxHp, boss: !!boss, dx: prev ? prev.dx : x, dy: prev ? prev.dy : y, flash: prev ? prev.flash : 0 });
   }
   enemies = next;
 }
@@ -870,13 +885,14 @@ function banner(html, ms) {
 function updateGameUI(g) {
   mode = g.m === 'coop' ? 'coop' : 'pvp';
   if (mode !== 'coop') { $('mode-chip').textContent = '対戦'; return; }
-  const chip = '協力　WAVE ' + g.w + (g.ph === 'fight' ? '　残り ' + g.left : g.ph === 'rest' ? '　まもなく開始' : '');
+  const chip = '協力　WAVE ' + g.w + (g.ph === 'fight' ? '　残り ' + g.left + '　→ ボス' : g.ph === 'boss' ? '　ボス戦：' + g.bn : g.ph === 'rest' ? '　まもなく開始' : '');
   if ($('mode-chip').textContent !== chip) $('mode-chip').textContent = chip;
   const key = g.ph + ':' + g.w;
-  if (key === lastUI) { if (g.ph === 'rest') banner('WAVE ' + g.w + '<small>' + (g.t || 1) + '秒後に開始' + (g.w % 5 === 0 ? '　ボス出現！' : '') + '</small>'); return; }
+  if (key === lastUI) { if (g.ph === 'rest') banner('WAVE ' + g.w + '<small>' + (g.t || 1) + '秒後に開始</small>'); return; }
   lastUI = key;
-  if (g.ph === 'rest') banner('WAVE ' + g.w + '<small>' + (g.t || 1) + '秒後に開始' + (g.w % 5 === 0 ? '　ボス出現！' : '') + '</small>');
+  if (g.ph === 'rest') banner('WAVE ' + g.w + '<small>' + (g.t || 1) + '秒後に開始</small>');
   else if (g.ph === 'fight') banner('WAVE ' + g.w + '<small>スタート！</small>', 1500);
+  else if (g.ph === 'boss') banner('ボス出現！<small>' + g.bn + '</small>', 2500);
   else if (g.ph === 'clear') banner('WAVE ' + g.w + ' クリア！<small>倒れた仲間が復活／ライフ＋1／武器が落ちた！</small>', 4000);
   else if (g.ph === 'over') banner('全滅…<small>WAVE ' + g.w + ' まで到達。もう一度 WAVE 1 から</small>', 5500);
 }
@@ -1277,19 +1293,19 @@ function drawPickup(pk, now) {
   if ((now / 400 | 0) % 2) { ctx.fillStyle = '#fff8c8'; ctx.fillRect(x + 5, y - h - 6 + bob, 1, 1); ctx.fillRect(x - 6, y - 8 + bob, 1, 1); }
 }
 function drawEnemy(e, x, y, now) {
-  const T = ENEMY_TYPES[e.type], im = ENEMY_IMGS[e.type], sc = T.sc;
+  const T = ENEMY_TYPES[e.type], im = ENEMY_IMGS[e.type], D = eDims(e), sc = D.sc;
   const w = T.fw * sc, h = T.fh * sc, dx = Math.round(x - w / 2), dy = Math.round(y - h);
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(Math.round(x - T.hw), Math.round(y) - 1, T.hw * 2, 2);
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(Math.round(x - D.hw), Math.round(y) - 1, Math.round(D.hw * 2), 2);
   if (now - (e.flash || 0) < 160 && (now / 50 | 0) % 2) return;        // hit flash
   const f = Math.floor(now / 130 + e.id) % 4;
   if (im.complete && im.naturalWidth) {
     if (e.face < 0) { ctx.save(); ctx.translate(dx + w, dy); ctx.scale(-1, 1); ctx.drawImage(im, f * T.fw, 0, T.fw, T.fh, 0, 0, w, h); ctx.restore(); }
     else ctx.drawImage(im, f * T.fw, 0, T.fw, T.fh, dx, dy, w, h);
   }
-  if (T.boss || e.maxHp > 1) {        // health bar
-    const bw = T.boss ? 40 : 12, bx = Math.round(x - bw / 2), by = dy - 4;
+  if (e.boss || e.maxHp > 1) {        // health bar
+    const bw = e.boss ? 40 : 12, bx = Math.round(x - bw / 2), by = dy - 4;
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 4);
-    ctx.fillStyle = T.boss ? '#ff4d6d' : '#f2c14e'; ctx.fillRect(bx, by, Math.max(0, Math.round(bw * e.hp / e.maxHp)), 2);
+    ctx.fillStyle = e.boss ? '#ff4d6d' : '#f2c14e'; ctx.fillRect(bx, by, Math.max(0, Math.round(bw * e.hp / e.maxHp)), 2);
   }
 }
 function drawChar(c, x, y, dir, frame, slot, isMe, p = {}) {
