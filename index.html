@@ -234,7 +234,7 @@ let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes w
 let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-25g';         // bump on every release; host and guests must match
+const VERSION = '2026-11-25h';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -416,7 +416,7 @@ const PLACE_NAME = { castle: 'お城', v1: 'はじまりの村', v2: 'もりか�
 // villagers: tile position + what they say (with a little help for the adventure)
 const NPC_DEFS = {                 // every villager says one sentence
   castle: [
-    { k: 'doc', n: '大臣', tx: 17, ty: 7, lines: ['草原から丘・森・町・墓地へ道がつながっていて、黄色い矢印が次の行き先を指しておりますぞ。'] },
+    { k: 'doc', n: '大臣', tx: 17, ty: 7, lines: ['草原から丘・森・町・墓地へ道がつながっていて、草原では黄色い矢印が次の行き先を指しておりますぞ。'] },
     { k: 'knight_f', n: '近衛兵', tx: 8, ty: 8, lines: ['中ボスの宝箱からは強い武器が出るが、ひとつの場所で1人1つまでだ。'] },
     { k: 'knight_m', n: 'お城の兵士', tx: 9, ty: 15, lines: ['この下の門を出ると、はじまりの村だ。'] },
     { k: 'elf_f', n: '侍女', tx: 18, ty: 15, lines: ['ボスを倒すと、次の場所への柵がひらくそうですよ。'] },
@@ -1717,8 +1717,8 @@ function nextHop(goal) {
   let n = goal; while (prev[n] !== curScene) n = prev[n];
   return n;
 }
-function guideTarget() {
-  if (mode !== 'story') return null;
+function guideTarget() {             // the arrow only shows on the 草原 crossroads
+  if (mode !== 'story' || curScene !== 'f1') return null;
   const goal = storyGoal();
   if (goal === 'castle' && curScene === 'castle') return KING ? { x: KING.x, y: KING.y } : null;
   const hop = nextHop(goal); if (!hop) return null;
