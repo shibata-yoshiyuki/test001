@@ -63,5 +63,18 @@
    26,
    34
   ]
+ },
+ "orc_warrior": {
+  "file": "orc_warrior.png",
+  "frameWidth": 16,
+  "frameHeight": 23,
+  "frames": 4,
+  "facing": "right",
+  "bbox": [
+   4,
+   6,
+   15,
+   22
+  ]
  }
 }
