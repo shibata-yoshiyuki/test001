@@ -162,7 +162,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
           <button class="btn primary" id="create-coop">協力モードで作る</button>
           <button class="btn primary" id="create">対戦モードで作る</button>
         </div>
-        <p class="sub">ストーリー：王様の頼みで北の魔王を倒しに行きます（全4章。進み具合はこのブラウザに保存）。協力：押し寄せる敵のウェーブをみんなで倒します。対戦：プレイヤー同士で撃ち合います。<br>作った人が部屋の親になります。親が抜けると部屋は終了します。</p>
+        <p class="sub">ストーリー：王様の頼みで北の魔王を倒しに行きます。お城から村・草原・森…と歩いて進みます（全4章。みんな別々の場所にいてもOK。進み具合はこのブラウザに保存）。協力：押し寄せる敵のウェーブをみんなで倒します。対戦：プレイヤー同士で撃ち合います。<br>作った人が部屋の親になります。親が抜けると部屋は終了します。</p>
         <p class="sub" id="story-save"></p>
       </div>
       <div>
@@ -197,11 +197,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     <div class="dlg-name" id="dlg-name"></div>
     <div class="dlg-text" id="dlg-text"></div>
     <div class="dlg-next">▼ タップ／スペースで次へ</div>
-  </div>
-  <div class="gate" id="gate" hidden role="dialog" aria-labelledby="gate-h">
-    <h3 id="gate-h">どこへ出発する？</h3>
-    <div class="gate-list" id="gate-list"></div>
-    <button class="btn" id="gate-close">やめる</button>
   </div>
   <div class="hud-bottom">
     <span class="chip buff" id="buff" hidden></span>
@@ -239,7 +234,7 @@ let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes w
 let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-25a';         // bump on every release; host and guests must match
+const VERSION = '2026-11-25b';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -379,7 +374,7 @@ const KING_LINES = [
   [{ n: '王様', t: '北の魔王を倒してくれて、本当にありがとう！ そなたたちは国の英雄じゃ。' },
    { n: '王様', t: '門はいつでも開いておる。また何度でも冒険に出てよいぞ。' }],
 ];
-const KING_TIP = [{ n: '王様', t: '下の「出発の門」の前で「出発」を押すと、行き先を選べる。選ぶのは部屋の親じゃ。' },
+const KING_TIP = [{ n: '王様', t: '下の門を出ると、はじまりの村じゃ。村の者たちの話もよく聞いておくのじゃぞ。' },
                   { n: '王様', t: '寄り道で中ボスを倒すと、宝箱から強い武器が手に入る。ひとつの宝箱はひとり分じゃぞ。' }];
 const ENDING = [{ n: '王様', t: 'おお……北の魔王を倒してくれたのか！' },
                 { n: '王様', t: KINGDOM + 'に平和が戻った。そなたたちこそ、まことの英雄じゃ！' },
@@ -399,6 +394,45 @@ function loadSave() {
 let save = loadSave();
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} renderSaveInfo(); }
 let curSeq = 0, storyPh = '', storyCh = 0;
+// the story world: places linked by exits you walk through. need = chapter you must have cleared to pass
+const LINKS = {
+  castle: { s: ['v1', 0] },
+  v1: { n: ['castle', 0], e: ['f1', 0] },
+  f1: { w: ['v1', 0], e: ['v2', 1] },
+  v2: { w: ['f1', 0], e: ['f2', 0] },
+  f2: { w: ['v2', 0], e: ['v3', 2] },
+  v3: { w: ['f2', 0], e: ['f3', 0] },
+  f3: { w: ['v3', 0], e: ['f4', 3] },
+  f4: { w: ['f3', 0] },
+};
+const FIELD_CH = { f1: 1, f2: 2, f3: 3, f4: 4 };
+const FIELD_BACK = { f1: 'v1', f2: 'v2', f3: 'v3', f4: 'v3' };          // where a wiped-out party wakes up
+const PLACE_NAME = { castle: 'お城', v1: 'はじまりの村', v2: 'もりかげ村', v3: 'はかもり村', f1: '草原', f2: '森', f3: '墓地', f4: '魔王城', island: '島' };
+// villagers: tile position + what they say (with a little help for the adventure)
+const NPC_DEFS = {
+  castle: [
+    { k: 'knight_m', n: 'お城の兵士', tx: 9, ty: 15, lines: ['この下の門を出ると、はじまりの村だ。', '村の東に草原がある。章のボスを倒すと、その先の道の柵がひらくぞ。'] },
+  ],
+  v1: [
+    { k: 'doc', n: '村長', tx: 8, ty: 8, lines: ['ようこそ、はじまりの村へ。東へ進むと草原じゃ。', '草原のキングスライムは、飛び上がってから落ちてくる。地面の赤い丸から逃げるんじゃぞ。'] },
+    { k: 'elf_f', n: 'ミナ', tx: 23, ty: 8, lines: ['草原の奥に、石がぐるっと並んだ広場があるの。', 'そこで眠ってる大きなオーガを倒すと、宝箱をくれるんだって。刀か投げ斧が入ってるらしいよ！'] },
+    { k: 'knight_m', n: '見張りの兵士', tx: 18, ty: 14, lines: ['最初のナイフは目の前しか届かない。敵にぐっと近づいて切るんだ。', '宝箱の武器は1つの章で1人1つまで。仲間の分も残しておけよ。'] },
+    { k: 'dwarf_m', n: '商人', tx: 27, ty: 14, lines: ['ケーキを食べるとライフが1つ回復、メロンソーダを飲むと10秒間足が速くなるよ。', '敵がときどき落とすから、見つけたら拾っておきな！'] },
+  ],
+  v2: [
+    { k: 'dwarf_f', n: '木こり', tx: 8, ty: 8, lines: ['東の森のゴブリンキングは、赤い線を出してから一直線に突っこんでくる。', '線から横にずれるんだ。突進のあとはフラフラしてるから、そこがねらい目だぞ！'] },
+    { k: 'elf_m', n: '狩人', tx: 23, ty: 8, lines: ['森の奥のマスクオークを倒すと、弓か赤い杖が手に入るらしい。', '弓は遠くまで届いて敵をつらぬく。赤い杖は3方向に撃てるぞ。'] },
+    { k: 'wizzard_f', n: 'おばあさん', tx: 18, ty: 14, lines: ['森は木が多いからね、木のうしろに隠れると敵の弾を防げるよ。', 'ただし、自分の弾も木に当たって止まっちまうけどね。'] },
+  ],
+  v3: [
+    { k: 'doc', n: '墓守', tx: 8, ty: 8, lines: ['墓地のガイコツ大将は、立ち止まってうずまき状に骨を飛ばしてくる。', '弾のすき間を見つけて近づくんじゃ。ときどき手下のガイコツも呼ぶぞ。'] },
+    { k: 'knight_f', n: '僧侶', tx: 23, ty: 8, lines: ['墓地のはずれにいるゾンビ巨人は、大ハンマーか緑の杖を落とすそうです。', '緑の杖の弾は敵を追いかけてくれます。大ハンマーは周りの敵をまとめてたたけますよ。'] },
+    { k: 'lizard_m', n: '旅のトカゲ族', tx: 18, ty: 14, lines: ['北の魔王は、体力が半分になると怒って赤く光る。そうなると弾が倍になるぞ。', '魔王がふっと消えたら、すぐ近くに現れる。まわりをよく見ておけ。'] },
+    { k: 'elf_f', n: '子ども', tx: 27, ty: 14, lines: ['魔王城へ行くには、墓地のガイコツ大将を倒さないとダメなんだって！', '魔王城でオーク呪術師を倒すと、どの武器が出るかわからない宝箱がもらえるらしいよ。'] },
+  ],
+};
+const NPC_IMGS = {};
+for (const k of ['doc', 'elf_f', 'elf_m', 'knight_m', 'knight_f', 'dwarf_m', 'dwarf_f', 'wizzard_f', 'lizard_m']) { const im = new Image(); im.src = 'assets/story/npc_' + k + '.png'; NPC_IMGS[k] = im; }
 let screen = 'select';
 let peer = null, isHost = false, roomCode = '';
 let hostConn = null;               // client side: connection to host
@@ -466,8 +500,10 @@ function createRoom(tries, m) {
     peer = p; isHost = true; roomCode = code; me.slot = 1;
     stats.clear(); stats.set(1, freshStat());
     mode = m;
-    game.sq = 0; curSeq = 0; loadScene(m === 'story' ? 'town' : 'island');
+    game.sq = 0; curSeq = 0; for (const k in AREAS) delete AREAS[k];
+    loadScene(m === 'story' ? 'castle' : 'island');
     const sp = spawnPoint(1); me.x = sp.x; me.y = sp.y;
+    stats.get(1).sc = curScene;
     if (m === 'story') { const st = stats.get(1); st.cleared = save.cleared; st.owned = new Set(['knife', ...save.weapons]); }
     resetGame();
     p.on('connection', onHostConnection);
@@ -500,6 +536,7 @@ function joinRoom() {
     }, JOIN_TIMEOUT_MS);
     conn.on('open', () => lobbyMsg('部屋の親とつながりました。準備中…'));
     conn.on('data', d => {
+      if (d.sc && hostConn === conn && ['shot', 'atk', 'pick', 'ehit', 'hit', 'bfx', 'respawn'].includes(d.t) && d.sc !== curScene) return;   // news from another place
       if (d.t === 'full') { clearTimeout(giveUp); clearTimeout(slowMsg); p.destroy(); busy(false); lobbyMsg('この部屋は満員です（最大4人）。', true); return; }
       if (d.t === 'version') {
         clearTimeout(giveUp); clearTimeout(slowMsg); p.destroy(); busy(false);
@@ -524,7 +561,7 @@ function joinRoom() {
       else if (d.t === 'scene') { loadScene(d.sc); curSeq = d.sq | 0; me.x = d.x; me.y = d.y; me.down = false; }
       else if (d.t === 'sclear') onStoryClear(d);
       else if (d.t === 'note') toast(String(d.text));
-      else if (d.t === 'story') onStoryEvent(d);
+      else if (d.t === 'warp') onWarp(d);
     });
     conn.on('close', () => { if (hostConn === conn) endRoom('親が部屋を閉じたため、部屋が終了しました。'); });
   });
@@ -536,9 +573,9 @@ function joinRoom() {
 
 // host side
 function spawnX(slot) { return WORLD_W / 2 + (slot - 2.5) * 28; }
-function spawnPoint(slot) {
-  if (curScene === 'town' && DOOR) return { x: DOOR.x + (slot - 2.5) * 22, y: DOOR.y - 40 };
-  return { x: WORLD_W / 2 + (slot - 2.5) * 28, y: WORLD_H / 2 + (SCENES[curScene] && SCENES[curScene].lair ? 22 : 0) };
+function spawnPoint(slot) {          // in the map that is active right now (SC)
+  if (ENTS && ENTS.start) return { x: ENTS.start.x + (slot - 2.5) * 20, y: ENTS.start.y };
+  return { x: WORLD_W / 2 + (slot - 2.5) * 28, y: WORLD_H / 2 + (SCENES[SC] && SCENES[SC].lair ? 22 : 0) };
 }
 function freeSlot() { const used = new Set([1, ...[...conns.values()].map(v => v.slot)]); for (let s = 1; s <= MAX; s++) if (!used.has(s)) return s; return 0; }
 function onHostConnection(conn) {
@@ -549,22 +586,25 @@ function onHostConnection(conn) {
     }
     const slot = freeSlot();
     if (!slot) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); return; }
-    const sp = spawnPoint(slot);
-    const st = { slot, c: Math.min(CHARS.length - 1, Math.max(0, (conn.metadata && conn.metadata.c) | 0)), x: sp.x, y: sp.y, dir: 'down', m: false };
+    const startSc = mode === 'story' ? 'castle' : 'island';
+    const sp = withMap(startSc, () => spawnPoint(slot));
+    const st = { slot, sc: startSc, c: Math.min(CHARS.length - 1, Math.max(0, (conn.metadata && conn.metadata.c) | 0)), x: sp.x, y: sp.y, dir: 'down', m: false };
     conns.set(conn.peer, { conn, slot, last: performance.now() });
     const stt = freshStat(), sv = conn.metadata.sv || {};
     stt.cleared = Math.max(0, Math.min(4, sv.c | 0));
     stt.owned = new Set(['knife', ...(Array.isArray(sv.w) ? sv.w.filter(w => PICK_WEAPONS.includes(w)) : [])]);
+    stt.sc = startSc;
     stats.set(slot, stt);
     others.set(conn.peer, { ...st, dx: st.x, dy: st.y, t: 0 });
-    conn.send({ t: 'welcome', slot, x: st.x, y: st.y, mode, sc: curScene, sq: curSeq });
+    conn.send({ t: 'welcome', slot, x: st.x, y: st.y, mode, sc: startSc, sq: curSeq });
     toast('P' + slot + '（' + (NAMES[st.c] || '？') + '）が入りました');
     renderList();
   });
   conn.on('data', d => {
     const rec = conns.get(conn.peer); if (!rec) return;
     if (d.t === 'atk') {                        // a guest attacked: the host decides with its own weapon record
-      performAttack({ id: String(d.id), slot: rec.slot, w: String(d.w), x: +d.x, y: +d.y, ax: +d.ax || 0, ay: +d.ay || 0 }, conn.peer);
+      const sst = stats.get(rec.slot);
+      withMap((sst && sst.sc) || 'island', () => performAttack({ id: String(d.id), slot: rec.slot, w: String(d.w), x: +d.x, y: +d.y, ax: +d.ax || 0, ay: +d.ay || 0 }, conn.peer));
       return;
     }
     if (d.t === 'equip') {                      // story: switch to a weapon you own
@@ -575,7 +615,10 @@ function onHostConnection(conn) {
     if (d.t !== 's') return;
     rec.last = performance.now();
     const o = others.get(conn.peer);
-    if (o) Object.assign(o, { c: d.c | 0, x: +d.x, y: +d.y, dir: ROWS[d.dir] !== undefined ? d.dir : 'down', m: !!d.m });
+    const nsc = mode === 'story' ? (SCENES[d.sc] ? d.sc : 'castle') : 'island';
+    if (o) Object.assign(o, { c: d.c | 0, x: +d.x, y: +d.y, dir: ROWS[d.dir] !== undefined ? d.dir : 'down', m: !!d.m, sc: nsc });
+    const st = stats.get(rec.slot);
+    if (st && !(st.scLock > performance.now() && nsc !== st.sc)) { st.sc = nsc; if (o) o.sc = nsc; } else if (st && o) o.sc = st.sc;   // just warped: ignore old news
   });
   const drop = () => { const rec = conns.get(conn.peer); if (conns.delete(conn.peer)) { others.delete(conn.peer); if (rec) { stats.delete(rec.slot); toast('P' + rec.slot + 'が部屋から出ました'); } renderList(); } };
   conn.on('close', drop);
@@ -598,9 +641,23 @@ function applyAll(ps) {
   if (changed) renderList(); else refreshListIfChanged();
 }
 
-function myState() { return { slot: me.slot, c: me.c, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, m: me.m, ...(isHost ? statOut(me.slot) : {}) }; }
+function myState() { return { slot: me.slot, c: me.c, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, m: me.m, sc: curScene, ...(isHost ? statOut(me.slot) : {}) }; }
 function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, down: st.down, inv: now < st.invUntil, ko: st.ko, w: st.weapon, am: st.ammo, fs: Math.max(0, Math.round(st.fastUntil - now)) } : {}; }
-function broadcast(msg, exceptPeer) { for (const [id, { conn }] of conns) if (id !== exceptPeer && conn.open) conn.send(msg); }
+// story: news only goes to players in the same place as the action (SC)
+function broadcast(msg, exceptPeer) {
+  const local = mode === 'story' && msg.t !== 'all';
+  if (local) msg = { ...msg, sc: SC };
+  for (const [id, { conn }] of conns) {
+    if (id === exceptPeer || !conn.open) continue;
+    if (local) { const o = others.get(id); if (!o || o.sc !== SC) continue; }
+    conn.send(msg);
+  }
+}
+function sendTo(slot, msg) {          // host → one player; false when that player is the host itself
+  if (slot === me.slot) return false;
+  for (const rec of conns.values()) if (rec.slot === slot && rec.conn.open) rec.conn.send(msg);
+  return true;
+}
 function otherBySlot(slot) { for (const o of others.values()) if (o.slot === slot) return o; return null; }
 let listSig = '';
 function syncFromStats() {    // host: copy authoritative battle state onto the drawn players
@@ -609,7 +666,7 @@ function syncFromStats() {    // host: copy authoritative battle state onto the 
   refreshListIfChanged();
 }
 function refreshListIfChanged() {
-  const sig = [me, ...others.values()].map(p => p.slot + ':' + p.life + ':' + p.down + ':' + p.ko + ':' + (p === me ? me.w : p.w)).join('|');
+  const sig = [me, ...others.values()].map(p => p.slot + ':' + p.life + ':' + p.down + ':' + p.ko + ':' + (p === me ? me.w : p.w) + ':' + (p === me ? curScene : p.sc)).join('|');
   if (sig !== listSig) { listSig = sig; renderList(); }
 }
 
@@ -621,7 +678,7 @@ function addShot(d, trusted) {
   if (slot === 0) { if (!trusted) return null; W = { spd: +d.spd || 80, rng: +d.rng || 200, dmg: 1, proj: 'enemy' }; }
   else { if (!(slot >= 1 && slot <= MAX)) return null; W = WEAPONS[d.w]; if (!W || W.kind !== 'shot') return null; }
   const v = Math.hypot(+d.vx, +d.vy) || 1;
-  const sh = { id, slot, w: slot === 0 ? 'enemy' : d.w, x: +d.x, y: +d.y, vx: d.vx / v * W.spd, vy: d.vy / v * W.spd, dist: 0,
+  const sh = { id, sc: d.sc || SC, slot, w: slot === 0 ? 'enemy' : d.w, x: +d.x, y: +d.y, vx: d.vx / v * W.spd, vy: d.vy / v * W.spd, dist: 0,
     spd: W.spd, rng: W.rng, dmg: W.dmg, pierce: !!W.pierce, homing: !!W.homing, boom: !!W.boomerang, back: false, hits: new Set(), proj: W.proj, spin: 0 };
   if (!isFinite(sh.x) || !isFinite(sh.y)) return null;
   shots.set(id, sh);
@@ -637,12 +694,11 @@ function attackFx(a) {
       const c = Math.cos(base + da), sn = Math.sin(base + da);
       addShot({ id: a.id + ':' + a.w + ':' + i, slot: a.slot, w: a.w, x: a.x + c * 8, y: a.y + sn * 6, vx: c, vy: sn });
     });
-  } else fx.push({ kind: W.kind, w: a.w, slot: a.slot, x: a.x, y: a.y, base, t: now });
+  } else fx.push({ kind: W.kind, w: a.w, slot: a.slot, x: a.x, y: a.y, base, t: now, sc: SC });
 }
 function fire(aimX, aimY, held) {
   if (dlgOpen) { if (!held) nextLine(); return; }                 // reading: the button turns pages
-  if ($('gate') && !$('gate').hidden) return;
-  if (mode === 'story' && curScene === 'town') { if (!held && interact) doInteract(); return; }   // no fighting in the castle
+  if (mode === 'story' && !FIELD_CH[curScene]) { if (!held && interact) doInteract(); return; }   // no fighting in the castle or villages
   const now = performance.now();
   const W = WEAPONS[me.w] || WEAPONS.knife;
   if (screen !== 'play' || !peer || me.down || now - me.lastShot < W.cd) return;
@@ -671,7 +727,7 @@ function performAttack(a, fromPeer) {
   broadcast({ t: 'atk', ...att }, wk === a.w ? fromPeer : null);   // the attacker already drew it, unless the weapon differs
   attackFx(att);
   if (W.kind === 'melee') resolveMelee(att, W, now);
-  else if (W.kind === 'slam') setTimeout(() => resolveSlam(att, W), W.delay);
+  else if (W.kind === 'slam') { const sc = SC; setTimeout(() => withMap(sc, () => resolveSlam(att, W)), W.delay); }
   syncFromStats();
 }
 function angleDiff(a, b) { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d); }
@@ -683,7 +739,7 @@ function resolveMelee(att, W, now) {
     return d < rad + 3 || angleDiff(Math.atan2(dy, dx), base) <= W.arc;
   };
   if (mode !== 'pvp') {
-    for (const e of [...enemies.values()]) { const D = eDims(e); if (inArc(e.x, e.y - D.hh / 2, D.hw)) hitEnemy(e, att.slot, W.dmg, '', true); }
+    for (const e of [...enemies.values()]) { if (e.sc !== SC) continue; const D = eDims(e); if (inArc(e.x, e.y - D.hh / 2, D.hw)) hitEnemy(e, att.slot, W.dmg, '', true); }
   } else {
     for (const t of playerTargets()) if (t.slot !== att.slot && inArc(t.x, t.y - 12, 7)) damagePlayer(t.slot, t.x - att.x, t.y - att.y, att.slot, '', now, true);
   }
@@ -694,7 +750,7 @@ function resolveSlam(att, W) {
   const p = att.slot === me.slot ? me : otherBySlot(att.slot); if (!p) return;
   const now = performance.now(), cx = p.x, cy = p.y - 8;
   if (mode !== 'pvp') {
-    for (const e of [...enemies.values()]) { const D = eDims(e); if (Math.hypot(e.x - cx, e.y - D.hh / 2 - cy) <= W.radius + D.hw) hitEnemy(e, att.slot, W.dmg, '', true); }
+    for (const e of [...enemies.values()]) { if (e.sc !== SC) continue; const D = eDims(e); if (Math.hypot(e.x - cx, e.y - D.hh / 2 - cy) <= W.radius + D.hw) hitEnemy(e, att.slot, W.dmg, '', true); }
   } else {
     for (const t of playerTargets()) if (t.slot !== att.slot && Math.hypot(t.x - cx, t.y - 12 - cy) <= W.radius + 6) damagePlayer(t.slot, t.x - cx, t.y - cy, att.slot, '', now, true);
   }
@@ -707,7 +763,7 @@ function hitEnemy(e, by, dmg, shotId, keep) {
   if (T.mid && !e.aggro) wakeMids(e);
   if (e.hp <= 0) {
     enemies.delete(e.id); if (st) st.ko++;
-    if (T.mid) { spawnPickup('chest', e.x, e.y, { ch: game.ch }); toast(slotName(by) + 'が' + T.name + 'を倒した！ 宝箱が出た！'); }
+    if (T.mid) { spawnPickup('chest', e.x, e.y, { ch: FIELD_CH[SC] || 4 }); if (SC === curScene) toast(slotName(by) + 'が' + T.name + 'を倒した！ 宝箱が出た！'); }
     else if (e.boss && mode === 'story') { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropItem('food', e.x, e.y); }
     else if (e.boss) { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
     else if (mode === 'story') {                  // story: small enemies never drop weapons
@@ -721,20 +777,21 @@ function hitEnemy(e, by, dmg, shotId, keep) {
     }
   }
   const msg = { t: 'ehit', id: shotId || '', keep: !!keep, eid: e.id, hp: e.hp, x: e.x, y: e.y - eDims(e).hh * .6 };
-  broadcast(msg); onEhit(msg); syncFromStats();
+  broadcast(msg); if (SC === curScene) onEhit(msg); syncFromStats();
 }
 function nearestFoe(sh, maxD) {    // for homing shots
   let best = null, bd = maxD;
   if (mode !== 'pvp') {
-    for (const e of enemies.values()) { const x = isHost ? e.x : e.dx, y = isHost ? e.y : e.dy, d = Math.hypot(x - sh.x, y - sh.y); if (d < bd) { bd = d; best = { x, y }; } }
+    for (const e of enemies.values()) { if (isHost && e.sc !== SC) continue; const x = isHost ? e.x : e.dx, y = isHost ? e.y : e.dy, d = Math.hypot(x - sh.x, y - sh.y); if (d < bd) { bd = d; best = { x, y }; } }
   } else {
-    const cand = [{ slot: me.slot, x: me.x, y: me.y, down: me.down }, ...[...others.values()].map(o => ({ slot: o.slot, x: o.dx, y: o.dy, down: o.down }))];
+    const cand = [{ slot: me.slot, x: me.x, y: me.y, down: me.down }, ...[...others.values()].filter(o => (o.sc || 'island') === SC).map(o => ({ slot: o.slot, x: o.dx, y: o.dy, down: o.down }))];
     for (const c of cand) { if (c.slot === sh.slot || c.down) continue; const d = Math.hypot(c.x - sh.x, c.y - sh.y); if (d < bd) { bd = d; best = c; } }
   }
   return best;
 }
 function stepShots(dt, now) {
   for (const sh of shots.values()) {
+    if (sh.sc && sh.sc !== SC) continue;        // the host runs each place separately
     if (sh.homing) {
       const f = nearestFoe(sh, 140);
       if (f) {
@@ -762,7 +819,7 @@ function stepShots(dt, now) {
     const oy = sh.y - 12;                       // where the shot is drawn
     if (sh.slot !== 0 && mode !== 'pvp') {      // co-op / story: player shots hit enemies only
       for (const e of [...enemies.values()]) {
-        if (sh.hits.has('e' + e.id)) continue;
+        if (e.sc !== SC || sh.hits.has('e' + e.id)) continue;
         const D = eDims(e);
         if (Math.abs(sh.x - e.x) <= D.hw + 3 && oy >= e.y - D.hh - 6 && oy <= e.y + 4) {
           sh.hits.add('e' + e.id);
@@ -783,7 +840,7 @@ function stepShots(dt, now) {
 // ---------- weapons on the ground ----------
 function spawnPickup(w, x, y, extra) {
   if (pickups.size >= 10) { const old = [...pickups.values()].find(p => p.w !== 'chest'); if (old) pickups.delete(old.id); }
-  const id = ++pickSeq; pickups.set(id, { id, w, x, y, ...(extra || {}) }); return id;
+  const id = ++pickSeq; pickups.set(id, { id, w, x, y, sc: SC, ...(extra || {}) }); return id;
 }
 function randomWeapon() { return PICK_WEAPONS[Math.random() * PICK_WEAPONS.length | 0]; }
 function dropAt(key, x, y) {
@@ -801,6 +858,7 @@ function stepPickups(now) {      // host
     if ([...pickups.values()].filter(p => ITEMS[p.w]).length < 2) { const p = randomLandSpot(); spawnPickup(Math.random() < .5 ? 'food' : 'drink', p.x, p.y); }
   }
   for (const pk of [...pickups.values()]) {
+    if (pk.sc !== SC) continue;
     for (const t of alivePlayers()) {
       if (Math.abs(t.x - pk.x) < 11 && Math.abs(t.y - pk.y) < 9) {
         const st = stats.get(t.slot);
@@ -808,8 +866,9 @@ function stepPickups(now) {      // host
         if (pk.w === 'food') { if (st.life >= LIFE_MAX) continue; st.life++; }     // full life: leave the cake for someone else
         else if (pk.w === 'drink') st.fastUntil = now + FAST_MS;
         else if (pk.w === 'chest') {           // story: one chest = one weapon for one person, kept forever
-          if (st.chestSq === game.sq) { if (!st.chestHint) { st.chestHint = true; sendNote(t.slot, 'この章の宝箱はもう1つあけました。残りの宝箱は仲間のぶんです'); } continue; }
-          st.chestSq = game.sq; st.chestHint = false;
+          const ckey = SC + ':' + areaOf(SC).inst;
+          if (st.chestSq === ckey) { if (!st.chestHint) { st.chestHint = true; sendNote(t.slot, 'この章の宝箱はもう1つあけました。残りの宝箱は仲間のぶんです'); } continue; }
+          st.chestSq = ckey; st.chestHint = false;
           const pick = a => a[Math.random() * a.length | 0];
           const pool = CH_POOL[pk.ch] || PICK_WEAPONS, fresh = pool.filter(k => !st.owned.has(k)), fresh2 = PICK_WEAPONS.filter(k => !st.owned.has(k));
           w = fresh.length ? pick(fresh) : fresh2.length ? pick(fresh2) : pick(pool);
@@ -817,7 +876,8 @@ function stepPickups(now) {      // host
         }
         else { st.weapon = pk.w; st.ammo = WEAPON_USES; }
         const msg = { t: 'pick', id: pk.id, slot: t.slot, w, chest };
-        broadcast(msg); onPick(msg); syncFromStats();
+        pickups.delete(pk.id);
+        broadcast(msg); if (SC === curScene) onPick(msg); syncFromStats();
         break;
       }
     }
@@ -859,7 +919,7 @@ function onPick(d) {
 }
 function applyPickups(list) {
   pickups.clear();
-  for (const [id, w, x, y] of list) if (WEAPONS[w] || ITEMS[w] || w === 'chest') pickups.set(id, { id, w, x, y });
+  for (const [id, w, x, y] of list) if (WEAPONS[w] || ITEMS[w] || w === 'chest') pickups.set(id, { id, w, x, y, sc: curScene });
 }
 function spawnWaveRewards() {   // co-op: one weapon per player when a wave is cleared
   const ps = alivePlayers().length ? alivePlayers() : playerTargets();
@@ -871,7 +931,12 @@ function spawnWaveRewards() {   // co-op: one weapon per player when a wave is c
     }
   }
 }
-function playerTargets() { return [{ slot: me.slot, x: me.x, y: me.y }, ...[...others.values()].map(o => ({ slot: o.slot, x: o.x, y: o.y }))]; }
+function playerTargets() {            // players standing in the map being simulated (SC)
+  const L = [];
+  if (curScene === SC) L.push({ slot: me.slot, x: me.x, y: me.y });
+  for (const o of others.values()) if ((o.sc || 'island') === SC) L.push({ slot: o.slot, x: o.x, y: o.y });
+  return L;
+}
 // host: one point of damage. by = shooter slot, 0 = enemy. Returns true if it landed.
 function damagePlayer(slot, kx, ky, by, shotId, now, keep) {
   const st = stats.get(slot);
@@ -884,7 +949,7 @@ function damagePlayer(slot, kx, ky, by, shotId, now, keep) {
   }
   const v = Math.hypot(kx, ky) || 1;
   const msg = { t: 'hit', id: shotId || '', keep: !!keep, victim: slot, by, life: st.life, kx: kx / v, ky: ky / v };
-  broadcast(msg); onHit(msg); syncFromStats();
+  broadcast(msg); if (SC === curScene) onHit(msg); syncFromStats();
   return true;
 }
 function slotName(slot) {
@@ -942,7 +1007,7 @@ function spawnEnemy(type, mult, boss, lv) {
   }
   if (!spot) spot = randomLandSpot();
   const hp = Math.ceil((boss ? BOSS_HP[type] : T.hp) * mult);
-  const e = { id: ++enemySeq, type, boss: !!boss, lv: lv || 1, x: spot.x, y: spot.y, hp, maxHp: hp, face: 1, cd: boss ? 2 : 1.5 + Math.random(), wx: 0, wy: 0, wt: 0, pat: 0 };
+  const e = { id: ++enemySeq, sc: SC, type, boss: !!boss, lv: lv || 1, x: spot.x, y: spot.y, hp, maxHp: hp, face: 1, cd: boss ? 2 : 1.5 + Math.random(), wx: 0, wy: 0, wt: 0, pat: 0 };
   enemies.set(e.id, e);
   return e;
 }
@@ -963,7 +1028,7 @@ function moveEnemy(e, D, vx, vy, spd, dt, noDetour) {
   if (Math.abs(vx) > .05) e.face = vx < 0 ? -1 : 1;
   return blocked;
 }
-function sendBossFx(k, x, y) { const m = { t: 'bfx', k, x: Math.round(x), y: Math.round(y) }; broadcast(m); onBossFx(m); }
+function sendBossFx(k, x, y) { const m = { t: 'bfx', k, x: Math.round(x), y: Math.round(y) }; broadcast(m); if (SC === curScene) onBossFx(m); }
 function onBossFx(d) {
   bossFx.push({ k: d.k, x: d.x, y: d.y, t: performance.now() });
   if (d.k === 'rage') toast('魔王が怒った！ 攻撃が激しくなる！');
@@ -972,15 +1037,15 @@ function onBossFx(d) {
 // ---------- story: mid-bosses ----------
 function wakeMids(src) {
   let woke = false;
-  for (const o of enemies.values()) if (ENEMY_TYPES[o.type].mid && !o.aggro) { o.aggro = true; woke = true; }
+  for (const o of enemies.values()) if (o.sc === SC && ENEMY_TYPES[o.type].mid && !o.aggro) { o.aggro = true; woke = true; }
   if (woke) sendBossFx('wake', src.x, src.y);
 }
-function spawnMids(ch, n) {
+function spawnMids(ch, n, start) {     // one mid-boss per visitor, around the stone ring
   if (!LAIR || !MID_FOR_CH[ch]) return;
   const type = MID_FOR_CH[ch], T = ENEMY_TYPES[type];
-  for (let i = 0; i < n; i++) {
-    const a = i / n * Math.PI * 2, s = standableNear(LAIR.x + Math.cos(a) * 24, LAIR.y + Math.sin(a) * 16, 8) || LAIR;
-    const e = { id: ++enemySeq, type, boss: false, aggro: false, lv: ch, x: s.x, y: s.y, hp: T.hp, maxHp: T.hp, face: i % 2 ? -1 : 1, cd: 1.5 + i * .4, wx: 0, wy: 0, wt: 0, pat: 0 };
+  for (let k = 0; k < n; k++) {
+    const i = (start || 0) + k, a = i * 1.7, s = standableNear(LAIR.x + Math.cos(a) * 24, LAIR.y + Math.sin(a) * 16, 8) || LAIR;
+    const e = { id: ++enemySeq, sc: SC, type, boss: false, aggro: false, lv: ch, x: s.x, y: s.y, hp: T.hp, maxHp: T.hp, face: i % 2 ? -1 : 1, cd: 1.5 + i * .4, wx: 0, wy: 0, wt: 0, pat: 0 };
     enemies.set(e.id, e);
   }
 }
@@ -1011,7 +1076,7 @@ function midStep(e, T, dt, now, tgt, best, ux, uy, ps) {
 function spawnMinion(type, near, lv) {
   for (let i = 0; i < 12; i++) {
     const a = Math.random() * Math.PI * 2, x = near.x + Math.cos(a) * 30, y = near.y + Math.sin(a) * 20;
-    if (canStandE(x, y, 4)) { const T = ENEMY_TYPES[type], e = { id: ++enemySeq, type, boss: false, lv, x, y, hp: T.hp, maxHp: T.hp, face: 1, cd: 1.5, wx: 0, wy: 0, wt: 0, pat: 0 }; enemies.set(e.id, e); return; }
+    if (canStandE(x, y, 4)) { const T = ENEMY_TYPES[type], e = { id: ++enemySeq, sc: SC, type, boss: false, lv, x, y, hp: T.hp, maxHp: T.hp, face: 1, cd: 1.5, wx: 0, wy: 0, wt: 0, pat: 0 }; enemies.set(e.id, e); return; }
   }
 }
 function standableNear(x, y, r) {
@@ -1109,7 +1174,7 @@ function bossStep(e, T, dt, now, tgt, best, ux, uy, ps) {
   return { vx: ux, vy: uy, spd: T.spd * .85 };
 }
 function stepEnemies(dt, now) {
-  const ps = alivePlayers(), list = [...enemies.values()];
+  const ps = alivePlayers(), list = [...enemies.values()].filter(e => e.sc === SC);
   for (const e of list) {
     if (!enemies.has(e.id)) continue;
     const T = ENEMY_TYPES[e.type], D = eDims(e);
@@ -1160,12 +1225,12 @@ function waveQueue(w, nPlayers) {
 function resetGame() {
   enemies.clear(); game.queue = []; game.banner = '';
   for (const id of [...shots.keys()]) if (shots.get(id).slot === 0) shots.delete(id);
-  if (mode === 'story') { game.scene = 'town'; game.ch = 0; game.phase = 'town'; game.ending = false; return; }
+  if (mode === 'story') { game.phase = 'story'; return; }
   if (mode === 'coop') { game.wave = 1; game.phase = 'rest'; game.until = performance.now() + 4000; game.startAt = performance.now(); }
   else { game.wave = 0; game.phase = 'wait'; }
 }
-function reviveAll(now, near) {
-  for (const [slot, st] of stats) if (st.down) st.downUntil = now;     // the respawn loop brings them back
+function reviveAll(now) {            // players downed in this place (SC) come back
+  for (const [slot, st] of stats) if (st.down && (st.sc || 'island') === SC) st.downUntil = now;
 }
 function stepWaves(now) {        // host, co-op only
   const nPlayers = stats.size;
@@ -1207,88 +1272,95 @@ function stepWaves(now) {        // host, co-op only
     for (const st of stats.values()) { st.ko = 0; st.weapon = 'knife'; st.ammo = 0; st.life = LIFE_MAX; }
   }
 }
-function partyMax() { return Math.max(save.cleared, ...[...stats.values()].map(st => st.cleared || 0)); }
-function mainLeft() { let n = 0; for (const e of enemies.values()) if (!ENEMY_TYPES[e.type].mid) n++; return n; }
-function changeScene(sc) {          // host: everybody moves to another map
-  game.sq = (game.sq || 0) + 1; game.scene = sc;
-  loadScene(sc); curSeq = game.sq;
-  enemies.clear(); pickups.clear(); shots.clear();
-  const now = performance.now();
-  for (const st of stats.values()) { st.down = false; st.downUntil = 0; st.life = LIFE_MAX; st.invUntil = now + 1500; st.fastUntil = 0; }
-  const sp = spawnPoint(me.slot); me.x = sp.x; me.y = sp.y; me.down = false;
-  for (const [pid, rec] of conns) {
-    const p = spawnPoint(rec.slot), o = others.get(pid);
-    if (o) { o.x = o.dx = p.x; o.y = o.dy = p.y; }
-    if (rec.conn.open) rec.conn.send({ t: 'scene', sc, sq: game.sq, x: p.x, y: p.y });
-  }
-  syncFromStats();
+function enemiesIn(sc) { let n = 0; for (const e of enemies.values()) if (e.sc === sc) n++; return n; }
+function mainLeft(sc) { let n = 0; for (const e of enemies.values()) if (e.sc === (sc || SC) && !ENEMY_TYPES[e.type].mid) n++; return n; }
+// each chapter place runs on its own: starts when someone walks in, resets when everyone has left
+const AREAS = {};
+function areaOf(sc) { return AREAS[sc] || (AREAS[sc] = { phase: 'idle', inst: 0, visitors: new Set(), waveIdx: 0, queue: [], until: 0, nextSpawn: 0, bossName: '', emptySince: 0 }); }
+function clearPlace(sc, keepMids) {
+  for (const e of [...enemies.values()]) if (e.sc === sc && (!keepMids || !ENEMY_TYPES[e.type].mid)) enemies.delete(e.id);
+  for (const [id, sh] of [...shots]) if (sh.sc === sc && sh.slot === 0) shots.delete(id);
 }
-function startChapter(ch) {
-  if (!isHost || mode !== 'story' || ch > Math.min(4, partyMax() + 1)) return;
-  game.ch = ch; changeScene('ch' + ch);
-  game.phase = 'intro'; game.until = performance.now() + 8000; game.waveIdx = 0; game.queue = []; game.bossName = '';
-  spawnMids(ch, Math.max(1, stats.size));          // one mid-boss (one chest) per player
-}
-function startWave(now) {
-  const types = CH_WAVES[game.ch][game.waveIdx]; game.waveIdx++;
-  const mult = 1 + 0.5 * (stats.size - 1), count = Math.round((3 + game.ch + game.waveIdx * 2) * mult);
-  game.queue = []; for (let i = 0; i < count; i++) game.queue.push({ type: types[Math.random() * types.length | 0], mult: 1 });
-  game.phase = 'fight'; game.nextSpawn = now;
-}
-function stepStory(now) {           // host
-  if (game.scene === 'town') return;
-  const anyAlive = [...stats.values()].some(st => !st.down);
-  if (['intro', 'fight', 'rest', 'boss'].includes(game.phase) && !anyAlive && stats.size) {
-    game.phase = 'over'; game.until = now + 5000; game.queue = [];
-    for (const e of [...enemies.values()]) if (!ENEMY_TYPES[e.type].mid) enemies.delete(e.id);
-    for (const id of [...shots.keys()]) if (shots.get(id).slot === 0) shots.delete(id);
-    return;
-  }
-  if (game.phase === 'intro' && now >= game.until) startWave(now);
-  else if (game.phase === 'fight') {
-    if (game.queue.length && now >= game.nextSpawn && enemies.size < MAX_ALIVE) { const q = game.queue.shift(); spawnEnemy(q.type, q.mult); game.nextSpawn = now + 600; }
-    if (!game.queue.length && !mainLeft()) {
-      reviveAll(now);
-      if (game.waveIdx < CH_WAVES[game.ch].length) { game.phase = 'rest'; game.until = now + 3000; }
-      else {
-        const bt = CH_BOSS[game.ch];
-        spawnEnemy(bt, 1 + 0.5 * (stats.size - 1), true, game.ch);
-        game.phase = 'boss'; game.bossName = BOSS_NAMES[bt];
+function stepAreas(now) {             // host, story
+  for (const sc of Object.keys(FIELD_CH)) {
+    const A = areaOf(sc);
+    const inside = [...stats.entries()].filter(([, st]) => st.sc === sc);
+    if (!inside.length) {
+      if (A.phase !== 'idle') {
+        if (!A.emptySince) A.emptySince = now;
+        else if (now - A.emptySince > 5000) {
+          clearPlace(sc); for (const pk of [...pickups.values()]) if (pk.sc === sc) pickups.delete(pk.id);
+          A.phase = 'idle'; A.visitors = new Set(); A.queue = [];
+        }
       }
+      continue;
     }
-  } else if (game.phase === 'rest' && now >= game.until) startWave(now);
-  else if (game.phase === 'boss' && !mainLeft()) {
-    game.phase = 'done';
-    reviveAll(now);
-    for (const st of stats.values()) { if (!st.down) st.life = Math.min(LIFE_MAX, st.life + 1); st.cleared = Math.max(st.cleared || 0, game.ch); }
-    const m = { t: 'sclear', ch: game.ch }; broadcast(m); onStoryClear(m);    // plan A: everyone here gets the clear
-  } else if (game.phase === 'done') {
-    if (!anyAlive) reviveAll(now);
-    if (PORTAL && alivePlayers().some(p => Math.hypot(p.x - PORTAL.x, p.y - PORTAL.y) < 16)) {
-      const ending = game.ch === 4;
-      game.ch = 0; changeScene('town'); game.phase = 'town';
-      if (ending) { const m = { t: 'story', k: 'ending' }; broadcast(m); onStoryEvent(m); }
+    A.emptySince = 0;
+    withMap(sc, () => stepArea(sc, A, FIELD_CH[sc], inside, now));
+  }
+}
+function startWaveA(A, ch, n, now) {
+  const types = CH_WAVES[ch][A.waveIdx]; A.waveIdx++;
+  const count = Math.round((3 + ch + A.waveIdx * 2) * (1 + 0.5 * (n - 1)));
+  A.queue = []; for (let i = 0; i < count; i++) A.queue.push({ type: types[Math.random() * types.length | 0], mult: 1 });
+  A.phase = 'fight'; A.nextSpawn = now;
+}
+function stepArea(sc, A, ch, inside, now) {
+  if (A.phase === 'idle') { A.phase = 'intro'; A.until = now + 6000; A.inst++; A.waveIdx = 0; A.queue = []; A.bossName = ''; A.visitors = new Set(); }
+  for (const [sl] of inside) if (!A.visitors.has(sl)) { A.visitors.add(sl); if (A.phase !== 'done') spawnMids(ch, 1, A.visitors.size - 1); }   // one mid-boss per visitor
+  const alive = inside.filter(([, st]) => !st.down);
+  if (['intro', 'fight', 'rest', 'boss'].includes(A.phase) && !alive.length) {
+    A.phase = 'over'; A.until = now + 4000; A.queue = []; clearPlace(sc, true); return;
+  }
+  if (A.phase === 'intro' && now >= A.until) startWaveA(A, ch, inside.length, now);
+  else if (A.phase === 'fight') {
+    if (A.queue.length && now >= A.nextSpawn && enemiesIn(sc) < MAX_ALIVE) { const q = A.queue.shift(); spawnEnemy(q.type, q.mult); A.nextSpawn = now + 600; }
+    if (!A.queue.length && !mainLeft(sc)) {
+      reviveAll(now);
+      if (A.waveIdx < CH_WAVES[ch].length) { A.phase = 'rest'; A.until = now + 3000; }
+      else { const bt = CH_BOSS[ch]; spawnEnemy(bt, 1 + 0.5 * (inside.length - 1), true, ch); A.phase = 'boss'; A.bossName = BOSS_NAMES[bt]; }
     }
-  } else if (game.phase === 'over' && now >= game.until) { game.ch = 0; changeScene('town'); game.phase = 'town'; }
+  } else if (A.phase === 'rest' && now >= A.until) startWaveA(A, ch, inside.length, now);
+  else if (A.phase === 'boss' && !mainLeft(sc)) {
+    A.phase = 'done'; reviveAll(now);
+    for (const [sl, st] of inside) {                 // plan A: everybody here gets the clear
+      if (!st.down) st.life = Math.min(LIFE_MAX, st.life + 1);
+      st.cleared = Math.max(st.cleared || 0, ch);
+      const m = { t: 'sclear', ch }; if (!sendTo(sl, m)) onStoryClear(m);
+    }
+  } else if (A.phase === 'done') { if (!alive.length) reviveAll(now); }
+  else if (A.phase === 'over' && now >= A.until) {   // wiped out: wake up in the village before this place
+    const back = FIELD_BACK[sc];
+    for (const [sl, st] of inside) {
+      st.down = false; st.downUntil = 0; st.life = LIFE_MAX; st.invUntil = now + 1500; st.sc = back; st.scLock = now + 2000;
+      const o = otherBySlot(sl); if (o) o.sc = back;
+      const m = { t: 'warp', sc: back, from: sc, msg: '全滅……気がつくと' + PLACE_NAME[back] + 'にいた' };
+      if (!sendTo(sl, m)) setTimeout(() => onWarp(m), 0);
+    }
+    clearPlace(sc); A.phase = 'idle'; A.visitors = new Set(); A.queue = [];
+  }
 }
 function onStoryClear(d) {
   const ch = d.ch | 0;
   if (ch > save.cleared) { save.cleared = Math.min(4, ch); }
   writeSave();
-  toast('記録しました：第' + ch + '章クリア！');
+  toast('記録しました：第' + ch + '章クリア！' + (ch < 4 ? ' 先へ進む道の柵がひらいた' : ''));
 }
-function onStoryEvent(d) {
-  if (d.k === 'ending') say(ENDING, () => banner('おしまい<small>遊んでくれてありがとう！ 門からまた冒険に出られます</small>', 7000));
+function onWarp(d) {
+  goTo(d.sc, d.from);
+  me.down = false; me.life = LIFE_MAX;
+  if (d.msg) setTimeout(() => toast(String(d.msg)), 400);
+}
+function gameOutFor(sc) {             // what one player needs to know about the place they are in
+  if (mode !== 'story') return { ...gameOut(), sc: 'island' };
+  const ch = FIELD_CH[sc] || 0, A = ch ? areaOf(sc) : null;
+  return { m: 'story', sc, ch, ph: A ? A.phase : 'safe', w: A ? A.waveIdx : 0, nw: ch ? CH_WAVES[ch].length : 0, left: A ? A.queue.length + mainLeft(sc) : 0, bn: A ? A.bossName : '' };
 }
 function gameOut() {
-  if (mode === 'story') {
-    const nw = (CH_WAVES[game.ch] || []).length;
-    return { m: 'story', sc: game.scene, sq: game.sq | 0, ch: game.ch, ph: game.phase, w: game.waveIdx | 0, nw, left: game.queue.length + mainLeft(), bn: game.bossName || '', t: Math.max(0, Math.ceil((game.until - performance.now()) / 1000)) };
-  }
   if (mode !== 'coop') return { m: 'pvp' };
   return { m: 'coop', w: game.wave, ph: game.phase, t: Math.max(0, Math.ceil((game.until - performance.now()) / 1000)), left: game.queue.length + enemies.size, bn: game.bossName || '', res: game.phase === 'win' ? game.result : '' };
 }
-function enemiesOut() { return [...enemies.values()].map(e => [e.id, e.type, Math.round(e.x), Math.round(e.y), e.hp, e.face, e.maxHp, e.boss ? 1 : 0, e.act || 0, e.act === 2 && e.jp !== undefined ? Math.round(e.jp * 100) : Math.round((e.ang || 0) * 100), e.rage ? 1 : 0, Math.round(e.jx1 || 0), Math.round(e.jy1 || 0), e.aggro ? 1 : 0]); }
+function enemiesOut(sc) { return [...enemies.values()].filter(e => !sc || e.sc === sc).map(e => [e.id, e.type, Math.round(e.x), Math.round(e.y), e.hp, e.face, e.maxHp, e.boss ? 1 : 0, e.act || 0, e.act === 2 && e.jp !== undefined ? Math.round(e.jp * 100) : Math.round((e.ang || 0) * 100), e.rage ? 1 : 0, Math.round(e.jx1 || 0), Math.round(e.jy1 || 0), e.aggro ? 1 : 0]); }
 function applyEnemies(list) {     // guest: follow the host's enemies
   const next = new Map();
   for (const [id, type, x, y, hp, face, maxHp, boss, act, p, rage, jx1, jy1, aggro] of list) {
@@ -1303,26 +1375,39 @@ function banner(html, ms) {
   clearTimeout(bannerTimer);
   if (ms) bannerTimer = setTimeout(() => { el.classList.add('fade'); setTimeout(() => { if (el.classList.contains('fade')) el.innerHTML = ''; }, 500); }, ms);
 }
-function ensureScene(g) {           // guest: follow the host to another map if a message was missed
-  if (isHost || !g.sc) return;
-  if (g.sc !== curScene || (g.sq | 0) !== curSeq) { loadScene(g.sc); curSeq = g.sq | 0; const p = spawnPoint(me.slot); me.x = p.x; me.y = p.y; }
+function ensureScene(g) {           // co-op / battle: everybody is on the island
+  if (isHost || !g.sc || mode === 'story') return;
+  if (g.sc !== curScene) { loadScene(g.sc); const p = spawnPoint(me.slot); me.x = p.x; me.y = p.y; }
 }
 function storyUI(g) {
-  const C = CH[g.ch];
-  const chip = g.sc === 'town' ? 'ストーリー　お城' : 'ストーリー　第' + g.ch + '章 ' + (C ? C.place : '') +
-    (g.ph === 'fight' ? '　WAVE ' + g.w + '/' + g.nw + '　残り ' + g.left : g.ph === 'boss' ? '　ボス戦：' + g.bn : g.ph === 'done' ? '　クリア！ 光る門へ' : '');
+  if (g.sc !== curScene) return;                     // old news from before we walked on
+  const C = CH[g.ch], place = PLACE_NAME[g.sc] || '';
+  const chip = !g.ch ? 'ストーリー　' + place : 'ストーリー　第' + g.ch + '章 ' + place +
+    (g.ph === 'fight' ? '　WAVE ' + g.w + '/' + g.nw + '　残り ' + g.left : g.ph === 'boss' ? '　ボス戦：' + g.bn : g.ph === 'done' ? '　クリア！' : '');
   if ($('mode-chip').textContent !== chip) $('mode-chip').textContent = chip;
   storyPh = g.ph; storyCh = g.ch;
-  const key = g.sq + ':' + g.ph + ':' + g.w;
+  const key = g.sc + ':' + g.ph + ':' + g.w;
   if (key === lastUI) return;
+  const arrived = !lastUI.startsWith(g.sc + ':');
   lastUI = key;
-  if (g.ph === 'town') { banner(''); if (!save.talked) toast('王様に近づいて「はなす」を押してみよう'); }
-  else if (g.ph === 'intro' && C) { banner('第' + g.ch + '章<small>' + C.title + '</small>', 3500); say(C.intro); }
-  else if (g.ph === 'fight') banner('WAVE ' + g.w + ' / ' + g.nw, 1500);
-  else if (g.ph === 'rest') banner('WAVE ' + (g.w) + ' クリア！<small>次の敵が来る……</small>', 2500);
+  if (!g.ch) {
+    if (arrived) {
+      banner(place, 1800);
+      if (g.sc === 'castle' && !save.talked) toast('王様に近づいて「はなす」を押してみよう');
+      else if (g.sc[0] === 'v') toast('村の人に話しかけると、冒険のヒントが聞けるかも');
+    }
+    return;
+  }
+  if (arrived) {
+    banner('第' + g.ch + '章<small>' + C.title + (g.ph === 'done' ? '（クリア済み）' : '') + '</small>', 3000);
+    if (g.ph === 'idle' || g.ph === 'intro') say(C.intro);
+    if (g.ph === 'done') return;
+  }
+  if (g.ph === 'fight') banner('WAVE ' + g.w + ' / ' + g.nw, 1500);
+  else if (g.ph === 'rest') banner('WAVE ' + g.w + ' クリア！<small>次の敵が来る……</small>', 2500);
   else if (g.ph === 'boss' && C) { banner('ボス出現！<small>' + g.bn + '</small>', 2500); say([{ n: g.bn, t: C.bossLine }]); }
   else if (g.ph === 'done' && C) { banner('第' + g.ch + '章 クリア！', 4000); say(C.outro); }
-  else if (g.ph === 'over') banner('全滅……<small>お城に戻ります</small>', 4500);
+  else if (g.ph === 'over') banner('全滅……', 3500);
 }
 function updateGameUI(g) {
   ensureScene(g);
@@ -1342,7 +1427,7 @@ function updateGameUI(g) {
   else if (g.ph === 'win') banner('ゲームクリア！<small>' + (g.bn || '魔王') + 'をやっつけた！<br>' + (g.res || '') + '<br>15秒後に WAVE 1 からもう一度</small>', 14000);
 }
 
-function randomLandSpot() {
+function randomLandSpot() {          // somewhere walkable in the active map (SC)
   for (let i = 0; i < 500; i++) {
     const x = (Math.random() * WORLD_W) | 0, y = (Math.random() * WORLD_H) | 0;
     const ty = Math.floor(y / TILE), tx = Math.floor(x / TILE);
@@ -1355,8 +1440,10 @@ function netTick() {
   const now = performance.now();
   if (isHost) {
     for (const [id, rec] of conns) if (now - rec.last > TIMEOUT_MS) { rec.conn.close(); conns.delete(id); others.delete(id); stats.delete(rec.slot); toast('P' + rec.slot + 'との通信が途切れました'); renderList(); }
-    for (const [slot, st] of stats) {            // revive downed players
-      if (st.down && now >= st.downUntil) {
+    const hs = stats.get(me.slot); if (hs) hs.sc = curScene;
+    for (const [slot, st] of stats) {            // revive downed players (near a living friend in the same place)
+      if (!(st.down && now >= st.downUntil)) continue;
+      withMap(st.sc || 'island', () => {
         st.down = false; st.life = LIFE_MAX; st.invUntil = now + 1500;
         let p = randomLandSpot();
         if (mode !== 'pvp') {
@@ -1366,16 +1453,21 @@ function netTick() {
         }
         const msg = { t: 'respawn', slot, x: p.x, y: p.y };
         broadcast(msg); onRespawn(msg);
-      }
+      });
     }
-    if (mode === 'coop') stepWaves(now);
-    else if (mode === 'story') stepStory(now);
+    if (mode === 'coop') withMap('island', () => stepWaves(now));
+    else if (mode === 'story') stepAreas(now);
     syncFromStats();
-    const ps = [myState(), ...[...others.values()].map(o => ({ slot: o.slot, c: o.c, x: o.x, y: o.y, dir: o.dir, m: o.m, ...statOut(o.slot) }))];
-    const g = { ...gameOut(), sc: curScene, sq: curSeq };
-    stepPickups(now);
-    broadcast({ t: 'all', ps, g, en: mode !== 'pvp' ? enemiesOut() : undefined, pk: [...pickups.values()].map(p => [p.id, p.w, Math.round(p.x), Math.round(p.y)]) });
-    updateGameUI(g);
+    const places = new Set([...stats.values()].map(st => st.sc || 'island'));
+    for (const sc of places) withMap(sc, () => stepPickups(now));
+    const ps = [myState(), ...[...others.values()].map(o => ({ slot: o.slot, c: o.c, x: o.x, y: o.y, dir: o.dir, m: o.m, sc: o.sc, ...statOut(o.slot) }))];
+    for (const [pid, rec] of conns) {          // everyone gets the news of their own place
+      if (!rec.conn.open) continue;
+      const o = others.get(pid), sc = (o && o.sc) || 'island';
+      rec.conn.send({ t: 'all', ps, g: gameOutFor(sc), en: mode !== 'pvp' ? enemiesOut(sc) : undefined,
+        pk: [...pickups.values()].filter(p => p.sc === sc).map(p => [p.id, p.w, Math.round(p.x), Math.round(p.y)]) });
+    }
+    updateGameUI(gameOutFor(curScene));
   } else if (hostConn) {
     if (now - lastHostMsg > TIMEOUT_MS) { endRoom('親との通信が途切れたため、部屋から出ました。'); return; }
     if (hostConn.open) hostConn.send({ t: 's', ...myState() });
@@ -1396,7 +1488,7 @@ function enterPlay() {
   $('room-code').textContent = roomCode;
   $('copy-msg').textContent = '';
   toast(isHost ? 'この部屋コードか招待リンクを、一緒に遊ぶ人に送ってください。（スマホの親は、送ったらすぐこの画面に戻ってください）' : '部屋に入りました。');
-  if (isHost || mode !== 'story') updateGameUI(isHost ? { ...gameOut(), sc: curScene, sq: curSeq } : { m: mode, w: 1, ph: 'rest', t: 0, left: 0 });
+  if (isHost || mode !== 'story') updateGameUI(isHost ? gameOutFor(curScene) : { m: mode, w: 1, ph: 'rest', t: 0, left: 0 });
   history.replaceState(null, '', '?room=' + roomCode);
   renderList();
   show('play');
@@ -1412,7 +1504,7 @@ function endRoom(msg) {
   enemies = new Map(); bossFx = []; game.queue = []; game.phase = 'wait'; lastUI = ''; banner(''); $('mode-chip').textContent = '';
   Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0, fastUntil: 0 });
   fx = []; pickups.clear();
-  dlgQueue = []; if (dlgTyping) clearInterval(dlgTyping); dlgTyping = 0; dlgOpen = false; $('dialog').hidden = true; $('gate').hidden = true; $('swap').hidden = true;
+  dlgQueue = []; if (dlgTyping) clearInterval(dlgTyping); dlgTyping = 0; dlgOpen = false; $('dialog').hidden = true; $('swap').hidden = true;
   storyPh = ''; storyCh = 0; renderSaveInfo();
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
@@ -1461,7 +1553,8 @@ function renderList() {
     life.className = 'life' + (p.down ? ' down' : '');
     life.textContent = p.down ? 'ダウン' : '♥'.repeat(lv) + '♡'.repeat(Math.max(0, LIFE_MAX - lv));
     const wk = p.you ? me.w : p.w;
-    li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : '') + '　', life, '　撃破 ' + (p.ko | 0) + (wk && wk !== 'knife' ? '　' + WEAPONS[wk].name : ''));
+    const where = mode === 'story' ? '［' + (PLACE_NAME[p.you ? curScene : p.sc] || '') + '］' : '';
+    li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : '') + where + '　', life, '　撃破 ' + (p.ko | 0) + (wk && wk !== 'knife' ? '　' + WEAPONS[wk].name : ''));
     return li;
   }));
 }
@@ -1471,7 +1564,7 @@ const KEYMAP = { KeyW: 'up', KeyA: 'left', KeyS: 'down', KeyD: 'right', ArrowUp:
 const ATTACK_KEYS = new Set(['Space', 'KeyJ', 'Enter']);
 addEventListener('keydown', e => {
   if (e.code === 'KeyQ' && screen === 'play' && !e.repeat) { cycleWeapon(); return; }
-  if (e.code === 'Escape' && !$('gate').hidden) { $('gate').hidden = true; return; }
+
   if (ATTACK_KEYS.has(e.code) && screen === 'play' && !(e.target instanceof HTMLInputElement && e.target.type === 'text')) {
     e.preventDefault(); atkHeld = true; if (!e.repeat) fire(); return;
   }
@@ -1498,34 +1591,43 @@ function nextLine(first) {
 }
 $('dialog').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); nextLine(); });
 function doInteract() {
-  if (interact === 'talk') {
-    const lines = KING_LINES[Math.min(4, save.cleared)].concat(save.cleared < 4 ? KING_TIP : []);
-    say(lines);
+  if (interact !== 'talk' || !talkTo) return;
+  if (talkTo === 'king') {
+    say(KING_LINES[Math.min(4, save.cleared)].concat(save.cleared < 4 ? KING_TIP : []));
     if (!save.talked) { save.talked = true; writeSave(); }
-  } else if (interact === 'gate') {
-    if (isHost) openGate();
-    else toast('出発先は部屋の親（P1）が選びます。親に門の前で「出発」を押してもらってください。');
-  }
+  } else say(talkTo.lines.map(t => ({ n: talkTo.n, t })));
 }
-function openGate() {
-  const max = partyMax(), list = $('gate-list');
-  list.replaceChildren();
-  for (let ch = 1; ch <= 4; ch++) {
-    const b = document.createElement('button'), open = ch <= Math.min(4, max + 1);
-    b.disabled = !open;
-    b.append('第' + ch + '章　' + CH[ch].title);
-    const sm = document.createElement('small');
-    sm.textContent = !open ? 'まだ行けません（前の章をクリアすると開きます）' : max >= ch ? 'クリア済み（もう一度行けます）' : 'つぎの目的地';
-    b.append(sm);
-    b.addEventListener('click', () => { $('gate').hidden = true; startChapter(ch); });
-    list.append(b);
-  }
-  $('gate').hidden = false;
+let talkTo = null, exitCool = 0, lockMsgAt = 0;
+// walk into another place (everyone's own browser does this for itself)
+function goTo(sc, from) {
+  loadScene(sc);
+  const p = (ENTS && ENTS[from]) || spawnPoint(me.slot);
+  me.x = p.x + (me.slot - 2.5) * 6; me.y = p.y;
+  if (!canStand(me.x, me.y)) { me.x = p.x; me.y = p.y; }
+  me.held.clear(); target = null; stick = null; lastUI = ''; storyPh = ''; storyCh = 0;
+  if (isHost) { const st = stats.get(me.slot); if (st) st.sc = sc; }
+  exitCool = performance.now() + 500;
+  renderList();
+  if (from === 'portal4') say(ENDING, () => banner('おしまい<small>遊んでくれてありがとう！ また何度でも冒険に出られます</small>', 7000));
 }
-$('gate-close').addEventListener('click', () => { $('gate').hidden = true; });
+function checkExits(px, py, now) {
+  if (mode !== 'story' || now < exitCool || dlgOpen) return;
+  for (const ex of EXITS) {
+    if (me.x < ex.x0 || me.x >= ex.x1 || me.y < ex.y0 || me.y >= ex.y1) continue;
+    if (ex.need && save.cleared < ex.need) {          // the fence: beat this chapter's boss first
+      me.x = px; me.y = py; target = null;
+      if (now > lockMsgAt) { toast('柵でふさがれている。' + BOSS_NAMES[CH_BOSS[ex.need]] + 'を倒すと通れるようになる'); lockMsgAt = now + 2500; }
+      return;
+    }
+    goTo(ex.to, curScene);
+    return;
+  }
+  if (FIELD_CH[curScene] && storyPh === 'done' && PORTAL && Math.hypot(me.x - PORTAL.x, me.y - PORTAL.y) < 14)
+    goTo('castle', FIELD_CH[curScene] === 4 ? 'portal4' : 'portal');
+}
 function ownedWeapons() { return ['knife', ...save.weapons]; }
 function cycleWeapon() {
-  if (mode !== 'story' || curScene === 'town') return;
+  if (mode !== 'story' || !FIELD_CH[curScene]) return;
   const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。寄り道の中ボスを倒して宝箱をあけよう'); return; }
   const w = list[(list.indexOf(me.w) + 1) % list.length];
   me.w = w;
@@ -1625,7 +1727,7 @@ function faceOf(vx, vy) { return Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 'left' 
 // ---------- 3. play: render ----------
 ctx.imageSmoothingEnabled = false;
 // maps are built from a fixed seed per scene, so every player sees the same one
-const land = [], beach = [], obst = [], reach = [];   // obst: 0 none, 1 low (rock...), 2 tall (tree...), 3 invisible block
+let land = [], beach = [], obst = [], reach = [];     // obst: 0 none, 1 low (rock...), 2 tall (tree...), 3 invisible block
 const world = document.createElement('canvas');
 const THEMES = {
   grass:  { g: ['#4a6b45', '#46663f'], sp: ['#55794f', '#3d5a3a'], deco: 'flowers', b: '#e3d29c', bs: ['#d3bf83', '#efe2b6'], deep: '#2a6f93', shal: '#3f8fb0', foam: '#d7eef5', wave: 'rgba(220, 242, 250, .55)', shadow: 'rgba(20, 40, 18, .35)' },
@@ -1633,31 +1735,62 @@ const THEMES = {
   grave:  { g: ['#4f5749', '#4b5345'], sp: ['#5c6556', '#3f463b'], deco: 'bones', b: '#6e6a5e', bs: ['#5e5a50', '#7d796c'], deep: '#1d2830', shal: '#2a3a45', foam: '#8fa3ad', wave: 'rgba(150, 180, 190, .35)', shadow: 'rgba(10, 14, 10, .4)' },
   demon:  { g: ['#3b3446', '#37303f'], sp: ['#463e52', '#2f2937'], deco: 'cracks', b: '#2a2430', bs: ['#3a3240', '#201b26'], deep: '#8f2c16', shal: '#c24a1a', foam: '#ffb347', wave: 'rgba(255, 210, 120, .6)', shadow: 'rgba(0, 0, 0, .4)' },
   castle: { deep: '#221d2b', wave: null, shadow: 'rgba(0, 0, 0, .3)' },
+  village: { g: ['#5b8a50', '#57844c'], sp: ['#679a5c', '#4b7543'], deco: 'flowers', b: '#c9a66b', bs: ['#b8935a', '#d9b97f'], deep: '#3d6b3a', shal: '#3f8fb0', foam: '#d7eef5', wave: null, shadow: 'rgba(20, 40, 18, .3)' },
 };
 const SCENES = {
   island: { w: 72, h: 54, seed: 20261106, oseed: 4242, theme: 'grass', fth: .64, pT: .3, pTl: .035, pR: .025 },
-  town:   { hall: true, w: 26, h: 20, theme: 'castle' },
-  ch1: { w: 56, h: 42, seed: 1101, oseed: 1102, theme: 'grass',  fth: .68, pT: .26, pTl: .02,  pR: .03,  lair: true },
-  ch2: { w: 56, h: 42, seed: 2201, oseed: 2202, theme: 'forest', fth: .52, pT: .32, pTl: .06,  pR: .015, lair: true },
-  ch3: { w: 56, h: 42, seed: 3301, oseed: 3302, theme: 'grave',  fth: .6,  pT: .14, pTl: .03,  pR: .07,  lair: true },
-  ch4: { w: 56, h: 42, seed: 4401, oseed: 4402, theme: 'demon',  fth: .62, pT: .12, pTl: .015, pR: .05,  lair: true },
+  castle: { hall: true, w: 26, h: 20, theme: 'castle' },
+  v1: { village: true, w: 46, h: 30, seed: 501, theme: 'village', houses: [[4, 3], [10, 3], [19, 3], [25, 3], [5, 15], [12, 15], [22, 15]] },
+  v2: { village: true, w: 46, h: 30, seed: 502, theme: 'village', houses: [[4, 3], [11, 3], [18, 3], [25, 3], [6, 15], [13, 15], [24, 15]] },
+  v3: { village: true, w: 46, h: 30, seed: 503, theme: 'village', houses: [[4, 3], [11, 3], [18, 3], [25, 3], [5, 15], [12, 15], [22, 15]] },
+  f1: { w: 56, h: 42, seed: 1101, oseed: 1102, theme: 'grass',  fth: .68, pT: .26, pTl: .02,  pR: .03,  lair: true },
+  f2: { w: 56, h: 42, seed: 2201, oseed: 2202, theme: 'forest', fth: .52, pT: .32, pTl: .06,  pR: .015, lair: true },
+  f3: { w: 56, h: 42, seed: 3301, oseed: 3302, theme: 'grave',  fth: .6,  pT: .14, pTl: .03,  pR: .07,  lair: true },
+  f4: { w: 56, h: 42, seed: 4401, oseed: 4402, theme: 'demon',  fth: .62, pT: .12, pTl: .015, pR: .05,  lair: true },
 };
 let curScene = '', THEME = THEMES.grass, LAIR = null, KING = null, DOOR = null, PORTAL = null;
-function loadScene(sc) {
+let SC = 'island', EXITS = [], ENTS = {}, NPCS = [], HOUSES = [];   // SC = the place being drawn or simulated right now
+// every place's map is kept as data so the host can run several places at once
+const MAPS = {};
+function mapState() { return { land, beach, obst, reach, MAP_W, MAP_H, WORLD_W, WORLD_H, LAIR, KING, DOOR, PORTAL, EXITS, ENTS, NPCS, HOUSES, THEME, SC }; }
+function setMapState(M) { ({ land, beach, obst, reach, MAP_W, MAP_H, WORLD_W, WORLD_H, LAIR, KING, DOOR, PORTAL, EXITS, ENTS, NPCS, HOUSES, THEME, SC } = M); }
+function getMap(sc) {
   if (!SCENES[sc]) sc = 'island';
-  buildWorld(sc);
-  shots.clear(); fx = []; bossFx = []; pickups.clear(); target = null;
-  if (!isHost) enemies = new Map();
-  if (typeof $ === 'function' && $('gate')) $('gate').hidden = true;
+  if (!MAPS[sc]) { const keep = mapState(); buildWorld(sc, false); MAPS[sc] = mapState(); setMapState(keep); }
+  return MAPS[sc];
 }
-function buildWorld(sc) {
+function withMap(sc, fn) { const keep = mapState(); setMapState(getMap(sc)); try { return fn(); } finally { setMapState(keep); } }
+function loadScene(sc) {              // show this place (and make it the active map)
+  if (!SCENES[sc]) sc = 'island';
+  buildWorld(sc, true); MAPS[sc] = mapState(); curScene = sc;
+  fx = []; bossFx = []; target = null; sparks = [];
+  if (!isHost) { shots.clear(); pickups.clear(); enemies = new Map(); }
+}
+function addExits(sc, carve) {        // exits on the map edge toward the next place (+ a road to them)
+  const L = LINKS[sc]; if (!L) return;
+  const cx = MAP_W / 2 | 0, cy = MAP_H / 2 | 0;
+  for (const side in L) {
+    const [to, need] = L[side];
+    let rect, ent, cells = [];
+    if (side === 'w') { rect = [0, (cy - 1) * TILE, 2 * TILE, (cy + 2) * TILE]; ent = { x: 3.5 * TILE, y: cy * TILE + 10 }; for (let x = 0; x <= cx; x++) for (let y = cy - 1; y <= cy + 1; y++) cells.push([x, y]); }
+    if (side === 'e') { rect = [(MAP_W - 2) * TILE, (cy - 1) * TILE, MAP_W * TILE, (cy + 2) * TILE]; ent = { x: (MAP_W - 3.5) * TILE, y: cy * TILE + 10 }; for (let x = cx; x < MAP_W; x++) for (let y = cy - 1; y <= cy + 1; y++) cells.push([x, y]); }
+    if (side === 'n') { rect = [(cx - 1) * TILE, 0, (cx + 1) * TILE, 2 * TILE]; ent = { x: cx * TILE, y: 3.5 * TILE }; for (let y = 0; y <= cy; y++) for (let x = cx - 1; x <= cx; x++) cells.push([x, y]); }
+    if (side === 's') { rect = [(cx - 1) * TILE, (MAP_H - 2) * TILE, (cx + 1) * TILE, MAP_H * TILE]; ent = { x: cx * TILE, y: (MAP_H - 3.5) * TILE }; for (let y = cy; y < MAP_H; y++) for (let x = cx - 1; x <= cx; x++) cells.push([x, y]); }
+    if (carve) for (const [x, y] of cells) { land[y][x] = true; beach[y][x] = false; obst[y][x] = 0; carve.add(x + ',' + y); }
+    EXITS.push({ x0: rect[0], y0: rect[1], x1: rect[2], y1: rect[3], to, need, side });
+    ENTS[to] = ent;
+  }
+}
+function buildWorld(sc, paint) {
   const S = SCENES[sc];
-  curScene = sc; THEME = THEMES[S.theme];
+  SC = sc; THEME = THEMES[S.theme];
   MAP_W = S.w; MAP_H = S.h; WORLD_W = MAP_W * TILE; WORLD_H = MAP_H * TILE;
-  land.length = 0; beach.length = 0; obst.length = 0; reach.length = 0;
-  world.width = WORLD_W; world.height = WORLD_H;
-  LAIR = KING = DOOR = null; PORTAL = { x: WORLD_W / 2, y: WORLD_H / 2 };
-  if (S.hall) { buildHall(S); return; }
+  land = []; beach = []; obst = []; reach = [];
+  LAIR = KING = DOOR = null; PORTAL = { x: WORLD_W / 2, y: WORLD_H / 2 - 4 * TILE };
+  EXITS = []; ENTS = {}; NPCS = []; HOUSES = [];
+  if (paint) { world.width = WORLD_W; world.height = WORLD_H; }
+  if (S.hall) { buildHall(S, paint); return; }
+  if (S.village) { buildVillage(sc, S, paint); return; }
   let seed = S.seed; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   // value noise for a ragged coastline
   const G = 6, gw = Math.ceil(MAP_W / G) + 2, gh = Math.ceil(MAP_H / G) + 2, grid = [];
@@ -1697,8 +1830,10 @@ function buildWorld(sc) {
       obst[y].push(o);
     }
   }
+  const road = new Set();
+  addExits(sc, road);
   const flood = () => {             // which tiles can be reached on foot from the middle
-    reach.length = 0;
+    reach = [];
     for (let y = 0; y < MAP_H; y++) reach.push(new Array(MAP_W).fill(false));
     const cx = MAP_W / 2 | 0, cy = MAP_H / 2 | 0, q = [[cx, cy]]; reach[cy][cx] = true;
     while (q.length) {
@@ -1715,13 +1850,14 @@ function buildWorld(sc) {
     const cand = [];
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
       const d = Math.hypot(x - MAP_W / 2, y - MAP_H / 2);
-      if (d >= 14 && d <= 20 && reach[y][x] && !beach[y][x]) cand.push([x, y]);
+      if (d >= 14 && d <= 20 && reach[y][x] && !beach[y][x] && Math.abs(y - (MAP_H / 2 | 0)) > 4) cand.push([x, y]);
     }
-    const [lx, ly] = cand.length ? cand[r2() * cand.length | 0] : [MAP_W / 2 + 15 | 0, MAP_H / 2 | 0];
+    const [lx, ly] = cand.length ? cand[r2() * cand.length | 0] : [MAP_W / 2 + 15 | 0, MAP_H / 2 - 8 | 0];
     for (let y = ly - 3; y <= ly + 3; y++) for (let x = lx - 3; x <= lx + 3; x++) if (y >= 0 && x >= 0 && y < MAP_H && x < MAP_W && Math.hypot(x - lx, y - ly) <= 3.2) obst[y][x] = 0;
     LAIR = { x: lx * TILE + 8, y: ly * TILE + 10 };
     flood();
   }
+  if (!paint) return;
   const T = THEME, f = world.getContext('2d');
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     const px = x * TILE, py = y * TILE;
@@ -1738,7 +1874,7 @@ function buildWorld(sc) {
       }
       continue;
     }
-    if (beach[y][x]) {
+    if (beach[y][x] || road.has(x + ',' + y)) {
       f.fillStyle = T.b; f.fillRect(px, py, TILE, TILE);
       for (let k = 0; k < 4; k++) { f.fillStyle = rnd() > .5 ? T.bs[0] : T.bs[1]; f.fillRect(px + (rnd() * 15 | 0), py + (rnd() * 15 | 0), 1, 1); }
       continue;
@@ -1768,7 +1904,48 @@ function buildWorld(sc) {
     }
   }
 }
-function buildHall(S) {             // the castle throne room (story hub)
+function buildVillage(sc, S, paint) {  // houses, a road, villagers; trees all around
+  const w = S.w, h = S.h, cx = w / 2 | 0, cy = h / 2 | 0, ox = (w - 32) / 2 | 0, oy = (h - 22) / 2 | 0;   // the 32x22 village sits in a forest
+  let ts = S.seed * 7 + 1; const tr = () => (ts = (ts * 16807) % 2147483647) / 2147483647;
+  for (let y = 0; y < h; y++) {
+    land.push([]); beach.push([]); obst.push([]); reach.push([]);
+    for (let x = 0; x < w; x++) {
+      const outer = x < ox + 2 || y < oy + 2 || x >= ox + 30 || y >= oy + 20;
+      const edge = x < 2 || y < 2 || x >= w - 2 || y >= h - 2 || (outer && tr() < .6);
+      land[y].push(true); beach[y].push(false); obst[y].push(edge ? 2 : 0); reach[y].push(!edge);
+    }
+  }
+  const road = new Set();
+  for (let x = 2; x < w - 2; x++) for (let y = cy - 1; y <= cy + 1; y++) road.add(x + ',' + y);
+  addExits(sc, road);
+  for (const k of road) { const [x, y] = k.split(',').map(Number); obst[y][x] = 0; reach[y][x] = true; }
+  const houses = S.houses || [];
+  houses.forEach(([hx0, hy0], i) => {
+    const hx = hx0 + ox, hy = hy0 + oy;
+    for (let y = hy + 1; y <= hy + 2; y++) for (let x = hx; x <= hx + 2; x++) { obst[y][x] = 3; reach[y][x] = false; }
+    HOUSES.push({ x: (hx + 1.5) * TILE, y: (hy + 3) * TILE - 1, v: (i + S.seed) % 3 });
+  });
+  for (const d0 of NPC_DEFS[sc] || []) { const d = { ...d0, tx: d0.tx + ox, ty: d0.ty + oy }; obst[d.ty][d.tx] = 3; reach[d.ty][d.tx] = false; NPCS.push({ ...d, x: d.tx * TILE + 8, y: d.ty * TILE + 14 }); }
+  ENTS.start = { x: cx * TILE, y: cy * TILE + 8 };
+  if (!paint) return;
+  let seed = S.seed; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const T = THEME, f = world.getContext('2d');
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const px = x * TILE, py = y * TILE;
+    if (road.has(x + ',' + y)) {
+      f.fillStyle = T.b; f.fillRect(px, py, TILE, TILE);
+      for (let k = 0; k < 4; k++) { f.fillStyle = rnd() > .5 ? T.bs[0] : T.bs[1]; f.fillRect(px + (rnd() * 15 | 0), py + (rnd() * 15 | 0), 1, 1); }
+      continue;
+    }
+    f.fillStyle = (x + y) % 2 ? T.g[0] : T.g[1]; f.fillRect(px, py, TILE, TILE);
+    for (let k = 0; k < 3; k++) { f.fillStyle = rnd() > .5 ? T.sp[0] : T.sp[1]; f.fillRect(px + (rnd() * 14 | 0), py + (rnd() * 14 | 0), 2, 1); }
+    const r = rnd(), fx = px + 3 + (rnd() * 9 | 0), fy = py + 3 + (rnd() * 9 | 0);
+    if (r < .1) { f.fillStyle = ['#f2e15c', '#f5f5f5', '#e98aa6', '#9fc5ff'][rnd() * 4 | 0]; f.fillRect(fx, fy, 1, 1); f.fillRect(fx + 3, fy + 2, 1, 1); f.fillRect(fx + 1, fy + 3, 1, 1); }
+    if (obst[y][x] === 2) { f.fillStyle = T.shadow; f.fillRect(px + 2, py + 12, 12, 3); }
+  }
+  for (const H of HOUSES) { f.fillStyle = T.shadow; f.fillRect(H.x - 26, H.y - 2, 52, 4); }
+}
+function buildHall(S, paint) {      // the castle throne room (story start)
   const w = S.w, h = S.h, cx = w / 2 | 0;
   for (let y = 0; y < h; y++) {
     land.push([]); beach.push([]); obst.push([]); reach.push([]);
@@ -1783,6 +1960,11 @@ function buildHall(S) {             // the castle throne room (story hub)
   KING = { x: cx * TILE, y: 5 * TILE + 14 };
   DOOR = { x: cx * TILE, y: (h - 2) * TILE + 6 };
   PORTAL = null;
+  EXITS.push({ x0: (cx - 1) * TILE, y0: (h - 2) * TILE + 2, x1: (cx + 1) * TILE, y1: h * TILE, to: 'v1', need: 0, side: 's' });
+  ENTS.v1 = { x: cx * TILE, y: (h - 4) * TILE }; ENTS.start = { x: cx * TILE, y: (h - 4) * TILE };
+  ENTS.portal = ENTS.portal4 = { x: cx * TILE, y: 9 * TILE };
+  for (const d of NPC_DEFS.castle) { obst[d.ty][d.tx] = 3; NPCS.push({ ...d, x: d.tx * TILE + 8, y: d.ty * TILE + 14 }); }
+  if (!paint) return;
   const f = world.getContext('2d');
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const px = x * TILE, py = y * TILE;
@@ -1874,7 +2056,21 @@ const OB_SPRITES = {
   grave: { 1: TOMBS, 2: DEAD_TREES },
   demon: { 1: DARK_ROCKS, 2: DARK_PILLARS },
   castle: { 1: ROCK_SPRITES, 2: PILLARS },
+  village: { 1: ROCK_SPRITES, 2: TREE_SPRITES },
 };
+const HOUSE_SPRITES = [['#b3463c', '#7a2a24'], ['#3f6fb0', '#26467a'], ['#4f8a42', '#2f5a2a']].map(([roof, dark]) => makeSprite(48, 46, g => {
+  g.fillStyle = '#5a4630'; g.fillRect(3, 20, 42, 26);                       // walls
+  g.fillStyle = '#e8d8b0'; g.fillRect(4, 21, 40, 24);
+  g.fillStyle = '#d4c294'; g.fillRect(4, 40, 40, 5);
+  for (let y = 0; y < 20; y++) {                                              // roof
+    const inset = Math.max(0, 14 - y);
+    g.fillStyle = dark; g.fillRect(1 + inset, 2 + y, 46 - inset * 2, 1);
+    g.fillStyle = roof; g.fillRect(2 + inset, 2 + y, 44 - inset * 2, 1);
+    if (y % 4 === 3) { g.fillStyle = dark; g.fillRect(2 + inset, 2 + y, 44 - inset * 2, 1); }
+  }
+  g.fillStyle = '#6b4a2b'; g.fillRect(20, 31, 9, 15); g.fillStyle = '#4a321d'; g.fillRect(20, 31, 9, 1); g.fillStyle = '#e8c547'; g.fillRect(26, 38, 1, 1);  // door
+  for (const wx of [8, 33]) { g.fillStyle = '#5a4630'; g.fillRect(wx, 26, 8, 8); g.fillStyle = '#9fd3ee'; g.fillRect(wx + 1, 27, 6, 6); g.fillStyle = '#5a4630'; g.fillRect(wx + 3, 27, 1, 6); g.fillRect(wx + 1, 29, 6, 1); }
+}));
 const KING_IMG = new Image(); KING_IMG.src = 'assets/story/king.png';
 const CHEST_IMG = new Image(); CHEST_IMG.src = 'assets/story/chest.png';
 buildWorld('island');
@@ -2027,6 +2223,7 @@ function frame(now) {
     const run = $('run').checked, fast = now < me.fastUntil, speed = (run ? 96 : 48) * (fast ? FAST_MULT : 1);
     // input priority: keys / pad  >  stick  >  tap target
     let vx = 0, vy = 0, step = speed * dt, dir = null;
+    const prevX = me.x, prevY = me.y;
     if (me.down) { /* can't move while down */ }
     else if (me.held.size) {
       for (const d of me.held) { vx += VEC[d][0]; vy += VEC[d][1]; }
@@ -2052,11 +2249,16 @@ function frame(now) {
     }
     if (!me.m) me.t = 0;
     if (!canStand(me.x, me.y)) { const sp = spawnPoint(me.slot); me.x = sp.x; me.y = sp.y; }   // safety net: never stuck in the sea
+    checkExits(prevX, prevY, now);
     camX = Math.round(me.x - VW / 2); camY = Math.round(me.y - 16 - VH / 2);
     if (atkHeld) fire(undefined, undefined, true);
-    stepShots(dt, now);
-    if (isHost && mode !== 'pvp') stepEnemies(dt, now);
-    else for (const e of enemies.values()) {
+    if (isHost) {                    // the host runs every place someone is in
+      const places = new Set([curScene]);
+      for (const sh of shots.values()) places.add(sh.sc || curScene);
+      for (const e of enemies.values()) places.add(e.sc);
+      for (const sc of places) withMap(sc, () => { stepShots(dt, now); if (mode !== 'pvp') stepEnemies(dt, now); });
+    } else stepShots(dt, now);
+    if (!isHost) for (const e of enemies.values()) {
       const k = 1 - Math.pow(0.001, dt);
       if (Math.hypot(e.x - e.dx, e.y - e.dy) > 60) { e.dx = e.x; e.dy = e.y; }
       e.dx += (e.x - e.dx) * k; e.dy += (e.y - e.dy) * k;
@@ -2065,17 +2267,18 @@ function frame(now) {
     const fastLeft = Math.ceil((me.fastUntil - now) / 1000);
     const buffTxt = fastLeft > 0 ? 'はやい！ のこり' + fastLeft + '秒' : '';
     if ($('buff').textContent !== buffTxt) { $('buff').textContent = buffTxt; $('buff').hidden = !buffTxt; }
-    interact = null;
-    if (mode === 'story' && curScene === 'town' && !dlgOpen) {
-      if (KING && Math.hypot(me.x - KING.x, me.y - KING.y) < 36) interact = 'talk';
-      else if (DOOR && Math.hypot(me.x - DOOR.x, me.y - DOOR.y) < 34) interact = 'gate';
+    interact = null; talkTo = null;
+    if (mode === 'story' && !dlgOpen) {
+      let best = 30;
+      if (KING && Math.hypot(me.x - KING.x, me.y - KING.y) < 36) { interact = 'talk'; talkTo = 'king'; best = 0; }
+      for (const n of NPCS) { const d = Math.hypot(me.x - n.x, me.y - n.y); if (d < best) { best = d; interact = 'talk'; talkTo = n; } }
     }
-    const inTown = mode === 'story' && curScene === 'town';
-    const wkey = me.w + ':' + me.ammo + ':' + interact + ':' + inTown + ':' + dlgOpen + ':' + mode;
+    const inTown = mode === 'story' && !FIELD_CH[curScene];
+    const wkey = me.w + ':' + me.ammo + ':' + interact + ':' + inTown + ':' + dlgOpen + ':' + mode + ':' + save.weapons.length;
     if (wkey !== lastWeaponKey) {
       lastWeaponKey = wkey;
       if (dlgOpen) { $('atk-name').textContent = 'つぎへ'; $('atk-ammo').textContent = ''; }
-      else if (inTown) { $('atk-name').textContent = interact === 'talk' ? 'はなす' : interact === 'gate' ? '出発' : '－'; $('atk-ammo').textContent = interact ? '' : '王様か門へ'; }
+      else if (inTown) { $('atk-name').textContent = interact === 'talk' ? 'はなす' : '－'; $('atk-ammo').textContent = interact ? '' : '人に近づく'; }
       else {
         $('atk-name').textContent = (WEAPONS[me.w] || WEAPONS.knife).name;
         $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
@@ -2106,11 +2309,12 @@ function frame(now) {
     const list = [
       { c: me.c, x: me.x, y: me.y, dir: me.dir, f: me.m ? Math.floor(me.t) % 4 : 0, slot: me.slot, me: true, fast: now < me.fastUntil,
         p: { life: me.life, down: me.down, inv: me.inv, atkT: me.atkT, ax: me.aimX, ay: me.aimY } },
-      ...[...others.values()].map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false, fast: (o.fs | 0) > 0,
+      ...[...others.values()].filter(o => (o.sc || 'island') === curScene).map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false, fast: (o.fs | 0) > 0,
         p: { life: o.life, down: o.down, inv: o.inv, atkT: o.atkT, ax: (VD[o.dir] || [0, 1])[0], ay: (VD[o.dir] || [0, 1])[1] } })),
     ].sort((a, b) => a.y - b.y);
     // shots: shadow on the ground, shot at chest height
     for (const sh of shots.values()) {
+      if (sh.sc && sh.sc !== curScene) continue;
       const sx = Math.round(sh.x), sy = Math.round(sh.y), ang = Math.atan2(sh.vy, sh.vx);
       ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(sx - 2, sy - 1, 5, 2);
       if (sh.proj === 'arrow' || sh.proj === 'axe') {
@@ -2145,6 +2349,7 @@ function frame(now) {
     // melee arcs and hammer shockwaves
     fx = fx.filter(f => now - f.t < (f.kind === 'slam' ? WEAPONS[f.w].delay + 260 : 170));
     for (const f of fx) {
+      if (f.sc && f.sc !== curScene) continue;
       const W = WEAPONS[f.w], k = (now - f.t);
       const o = f.slot === me.slot ? me : otherBySlot(f.slot);
       const cx = f.kind === 'slam' && o ? (o === me ? me.x : o.dx) : f.x, cy = (f.kind === 'slam' && o ? (o === me ? me.y : o.dy) : f.y) - 12;
@@ -2166,16 +2371,17 @@ function frame(now) {
     }
     const drawables = list.map(p => ({ y: p.y, draw: () => { if (p.fast && p.f % 2 === 1) drawSpeedTrail(p.x, p.y, now); drawChar(p.c, p.x, p.y, p.dir, p.f, p.slot, p.me, p.p); } }));
     for (const e of enemies.values()) {
+      if (isHost && e.sc !== curScene) continue;
       const ex = isHost ? e.x : e.dx, ey = isHost ? e.y : e.dy;
       drawables.push({ y: ey, draw: () => drawEnemy(e, ex, ey, now) });
     }
     pushObstacleDrawables(drawables);
-    if (curScene === 'town' && KING) drawables.push({ y: KING.y, draw: () => {
+    if (KING) drawables.push({ y: KING.y, draw: () => {
       ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(KING.x - 6, KING.y - 1, 12, 2);
       if (KING_IMG.complete && KING_IMG.naturalWidth) ctx.drawImage(KING_IMG, (Math.floor(now / 250) % 4) * 16, 0, 16, 28, KING.x - 8, KING.y - 27, 16, 28);
-      if (interact === 'talk' || !save.talked) { const b = (now / 300 | 0) % 2; ctx.fillStyle = '#fff'; ctx.fillRect(KING.x + 6, KING.y - 38 - b, 9, 7); ctx.fillStyle = '#222'; ctx.fillRect(KING.x + 8, KING.y - 35 - b, 1, 1); ctx.fillRect(KING.x + 10, KING.y - 35 - b, 1, 1); ctx.fillRect(KING.x + 12, KING.y - 35 - b, 1, 1); }
+      if (talkTo === 'king' || !save.talked) { const b = (now / 300 | 0) % 2; ctx.fillStyle = '#fff'; ctx.fillRect(KING.x + 6, KING.y - 38 - b, 9, 7); ctx.fillStyle = '#222'; ctx.fillRect(KING.x + 8, KING.y - 35 - b, 1, 1); ctx.fillRect(KING.x + 10, KING.y - 35 - b, 1, 1); ctx.fillRect(KING.x + 12, KING.y - 35 - b, 1, 1); }
     } });
-    if (mode === 'story' && storyPh === 'done' && PORTAL && curScene !== 'town') drawables.push({ y: PORTAL.y - 8, draw: () => {
+    if (mode === 'story' && storyPh === 'done' && PORTAL && FIELD_CH[curScene]) drawables.push({ y: PORTAL.y - 8, draw: () => {
       ctx.save();
       for (let i = 0; i < 3; i++) {
         const p = ((now / 900) + i / 3) % 1;
@@ -2185,7 +2391,25 @@ function frame(now) {
       ctx.globalAlpha = .5; ctx.fillStyle = '#b48cff'; ctx.beginPath(); ctx.ellipse(PORTAL.x, PORTAL.y, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     } });
-    for (const pk of pickups.values()) drawables.push({ y: pk.y, draw: () => drawPickup(pk, now) });
+    for (const pk of pickups.values()) if (!pk.sc || pk.sc === curScene) drawables.push({ y: pk.y, draw: () => drawPickup(pk, now) });
+    for (const H of HOUSES) { const im = HOUSE_SPRITES[H.v]; drawables.push({ y: H.y, draw: () => ctx.drawImage(im, Math.round(H.x - 24), H.y - 45) }); }
+    for (const n of NPCS) drawables.push({ y: n.y, draw: () => {
+      const im = NPC_IMGS[n.k]; ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(n.x - 6, n.y - 1, 12, 2);
+      if (im && im.complete && im.naturalWidth) { const fh = im.height; ctx.drawImage(im, (Math.floor(now / 250 + n.tx) % 4) * 16, 0, 16, fh, n.x - 8, n.y - fh + 1, 16, fh); }
+      if (talkTo === n) { const b = (now / 300 | 0) % 2, top = n.y - (im && im.height || 28) - 8 - b; ctx.fillStyle = '#fff'; ctx.fillRect(n.x + 4, top, 9, 7); ctx.fillStyle = '#222'; ctx.fillRect(n.x + 6, top + 3, 1, 1); ctx.fillRect(n.x + 8, top + 3, 1, 1); ctx.fillRect(n.x + 10, top + 3, 1, 1); }
+    } });
+    if (mode === 'story') for (const ex of EXITS) {          // exits: arrows, and a fence while locked for you
+      const locked = ex.need && save.cleared < ex.need, mx = (ex.x0 + ex.x1) / 2, my = (ex.y0 + ex.y1) / 2;
+      if (locked) drawables.push({ y: ex.y1, draw: () => {
+        const vertical = ex.side === 'e' || ex.side === 'w', fx0 = ex.side === 'e' ? ex.x0 + 4 : ex.side === 'w' ? ex.x1 - 8 : ex.x0, fy0 = ex.side === 's' ? ex.y0 + 4 : ex.side === 'n' ? ex.y1 - 8 : ex.y0;
+        ctx.fillStyle = '#5a3d22';
+        if (vertical) { ctx.fillRect(fx0, fy0, 3, ex.y1 - ex.y0); ctx.fillRect(fx0 - 3, fy0 + 8, 9, 2); ctx.fillRect(fx0 - 3, ex.y1 - 12, 9, 2); for (let y = fy0; y < ex.y1; y += 8) { ctx.fillStyle = '#8a6338'; ctx.fillRect(fx0 - 1, y, 5, 6); ctx.fillStyle = '#5a3d22'; } }
+        else { ctx.fillRect(fx0, fy0, ex.x1 - ex.x0, 3); for (let x = fx0; x < ex.x1; x += 8) { ctx.fillStyle = '#8a6338'; ctx.fillRect(x, fy0 - 4, 5, 9); ctx.fillStyle = '#5a3d22'; } }
+      } });
+      else { const b = (now / 400 | 0) % 2, dx = ex.side === 'e' ? 1 : ex.side === 'w' ? -1 : 0, dy = ex.side === 's' ? 1 : ex.side === 'n' ? -1 : 0;
+        ctx.fillStyle = 'rgba(255, 248, 200, .8)';
+        for (let i = 0; i < 3; i++) { const ax = Math.round(mx + dx * (b * 2) - dx * 6), ay = Math.round(my + dy * (b * 2) - dy * 6); ctx.fillRect(ax + dx * i - Math.abs(dy) * i, ay + dy * i - Math.abs(dx) * i, 1 + Math.abs(dy) * i * 2, 1 + Math.abs(dx) * i * 2); } }
+    }
     drawables.sort((a, b) => a.y - b.y).forEach(d => d.draw());
     sparks = sparks.filter(sp => now - sp.t < 300);
     for (const sp of sparks) {

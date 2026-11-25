@@ -1,4 +1,4 @@
-ストーリーモードの画像（king.png / chest.png）は次の素材集をもとにしています。
+ストーリーモードの画像（king.png / chest.png / npc_*.png）は次の素材集をもとにしています。
 
   素材名 : 16x16 DungeonTileset II（v1.7）
   作者   : 0x72（Robert）
@@ -7,3 +7,4 @@
 
   king.png  : wizzard_m_idle_anim に王冠と赤い服を描き足したもの
   chest.png : chest_full_open_anim_f0
+  npc_*.png : 村人。doc / elf_f / elf_m / knight_m / knight_f / dwarf_m / dwarf_f / wizzard_f / lizard_m の idle_anim（4コマを横に並べたもの）
