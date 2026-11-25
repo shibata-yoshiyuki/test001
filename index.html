@@ -234,7 +234,7 @@ let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes w
 let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-25d';         // bump on every release; host and guests must match
+const VERSION = '2026-11-25e';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -2037,7 +2037,7 @@ function buildWorld(sc, paint) {
 }
 function buildMaze(rnd) {             // 迷いの森: corridors 3 tiles wide between walls of trees
   const P = 5, C = (MAP_W - 2) / P | 0, R = (MAP_H - 2) / P | 0;
-  for (let y = 0; y < MAP_H; y++) { land.push(new Array(MAP_W).fill(true)); beach.push(new Array(MAP_W).fill(false)); obst.push(new Array(MAP_W).fill(2)); }
+  for (let y = 0; y < MAP_H; y++) { land.push(new Array(MAP_W).fill(true)); beach.push(new Array(MAP_W).fill(false)); obst.push(new Array(MAP_W).fill(4)); }
   const open = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) obst[y][x] = 0; };
   const X = i => 2 + i * P, Y = j => 2 + j * P;
   const seen = [], deg = []; for (let j = 0; j < R; j++) { seen.push(new Array(C).fill(false)); deg.push(new Array(C).fill(0)); }
@@ -2260,7 +2260,7 @@ const KING_IMG = new Image(); KING_IMG.src = 'assets/story/king.png';
 const CHEST_IMG = new Image(); CHEST_IMG.src = 'assets/story/chest.png';
 buildWorld('island');
 // blocking boxes inside a tile (x0, y0, x1, y1)
-const OB_BOX = { 1: [1, 4, 15, 15], 2: [4, 8, 12, 16], 3: [0, 0, 16, 16] };
+const OB_BOX = { 1: [1, 4, 15, 15], 2: [4, 8, 12, 16], 3: [0, 0, 16, 16], 4: [0, 0, 16, 16] };   // 4: a maze wall of trees (no squeezing between them)
 function obstacleAt(px, py) {
   const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
   if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
@@ -2275,8 +2275,8 @@ function pushObstacleDrawables(list) {     // only those near the screen
     const o = obst[y][x]; if (!o || o === 3) continue;
     const v = ((x * 7 + y * 13) % 2);
     const bx = x * TILE + 8, by = y * TILE + 15;
-    const set = OB_SPRITES[SCENES[curScene].theme] || OB_SPRITES.grass, im = set[o][v];
-    if (o === 2) list.push({ y: by, draw: () => {
+    const set = OB_SPRITES[SCENES[curScene].theme] || OB_SPRITES.grass, im = set[o === 4 ? 2 : o][v];
+    if (o === 2 || o === 4) list.push({ y: by, draw: () => {
       const behind = me.y < by && me.y > by - 30 && Math.abs(me.x - bx) < 15;   // you are behind this tree: see through it
       if (behind) ctx.globalAlpha = .5;
       ctx.drawImage(im, bx - (im.width >> 1), by - im.height + 1);
