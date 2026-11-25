@@ -234,7 +234,7 @@ let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes w
 let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-25i';         // bump on every release; host and guests must match
+const VERSION = '2026-11-25j';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -438,7 +438,7 @@ const NPC_DEFS = {                 // every villager says one sentence
   v2: [
     { k: 'dwarf_f', n: '木こり', tx: 8, ty: 8, lines: ['ゴブリンキングが赤い線を出したら、横にずれて突進をよけろ！'] },
     { k: 'elf_m', n: '狩人', tx: 23, ty: 8, lines: ['迷いの森の右上の出口の先で、マスクオークが弓か赤い杖の宝箱を守っているらしい。'] },
-    { k: 'dwarf_m', n: '森番', tx: 29, ty: 8, lines: ['迷いの森の行き止まりには、ケーキやメロンソーダの入った宝箱も落ちているぞ。'] },
+    { k: 'dwarf_m', n: '森番', tx: 29, ty: 8, lines: ['迷いの森の行き止まりには宝箱があって、いちばん奥のには武器が入っているらしいぞ。'] },
     { k: 'wizzard_f', n: 'おばあさん', tx: 18, ty: 14, lines: ['その古井戸は、昔どこか遠くへ続いていたそうだよ。'] },
     { k: 'knight_m', n: '旅の剣士', tx: 27, ty: 14, lines: ['オーク隊長のたいまつで地面が赤く光ったら、すぐに離れろ！'] },
     { k: 'elf_f', n: '木の実売り', tx: 13, ty: 14, lines: ['迷いの森の左上の出口を抜けると、ゴブリンの巣があるんだって。'] },
@@ -890,6 +890,16 @@ function stepPickups(now) {      // host
       if (Math.abs(t.x - pk.x) < 11 && Math.abs(t.y - pk.y) < 9) {
         const st = stats.get(t.slot);
         let w = pk.w, chest = 0;
+        if (pk.w === 'tchest' && pk.wpn) {   // the maze's best chest: a weapon to keep (like a mid-boss chest, but anyone may take it)
+          const pick = a => a[Math.random() * a.length | 0];
+          const pool = CH_POOL[2], fresh = pool.filter(k => !st.owned.has(k)), fresh2 = PICK_WEAPONS.filter(k => !st.owned.has(k));
+          w = fresh.length ? pick(fresh) : fresh2.length ? pick(fresh2) : pick(pool);
+          st.owned.add(w); st.weapon = w; st.ammo = 0;
+          pickups.delete(pk.id);
+          const m = { t: 'pick', id: pk.id, slot: t.slot, w, chest: 1 };
+          broadcast(m); if (SC === curScene) onPick(m); syncFromStats();
+          break;
+        }
         if (pk.w === 'tchest') {             // a small treasure chest: a cake or a melon soda pops out
           pickups.delete(pk.id);
           const item = Math.random() < .5 ? 'food' : 'drink';
@@ -1401,7 +1411,7 @@ function stepArea(sc, A, ch, inside, now) {
   if (kind === 'hub' || kind === 'maze') {        // 草原: a few weak monsters / 迷いの森: they keep coming
     if (A.phase === 'idle') {
       A.phase = kind; A.inst++; A.nextSpawn = now + (kind === 'maze' ? 1500 : 2500);
-      for (const c of CHEST_SPOTS) spawnPickup('tchest', c.x, c.y);
+      for (const c of CHEST_SPOTS) spawnPickup('tchest', c.x, c.y, c.wpn ? { wpn: 1 } : null);
     }
     const lv = Math.max(0, ...inside.map(([, st]) => st.cleared || 0));
     const types = kind === 'maze' ? [0, 1, 1] : lv >= 2 ? [0, 1, 1] : lv >= 1 ? [0, 0, 1] : [0];
@@ -2091,7 +2101,7 @@ function buildMaze(rnd) {             // 迷いの森: corridors 3 tiles wide be
   for (let j = 0; j < R; j++) for (let i = 0; i < C; i++)
     if (deg[j][i] === 1 && !(i === ei && j === ej) && !(j === 0 && (i === 2 || i === 8))) ends.push([dist[j][i], i, j]);
   ends.sort((p, q) => q[0] - p[0]);
-  CHEST_SPOTS = ends.slice(0, 5).map(([, i, j]) => ({ x: (X(i) + 1.5) * TILE, y: (Y(j) + 1.5) * TILE + 4 }));
+  CHEST_SPOTS = ends.slice(0, 3).map(([, i, j], k) => ({ x: (X(i) + 1.5) * TILE, y: (Y(j) + 1.5) * TILE + 4, wpn: k === 0 }));   // the farthest one holds a weapon
   return [X(ei) + 1, Y(ej) + 1];
 }
 function buildVillage(sc, S, paint) {  // houses, a road, villagers; trees all around
