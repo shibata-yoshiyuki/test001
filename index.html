@@ -396,7 +396,7 @@ let curSeq = 0, storyPh = '', storyCh = 0;
 // the story world: places linked by exits you walk through. need = chapter you must have cleared to pass
 // [side, to, chapter you must have cleared to pass, position along the side]
 const LINKS = {
-  castle: [['s', 'v1', 0]],           // (the castle builds its own door; listed for the guide arrow)
+  castle: [['s', 'v1', 0]],           // (the castle builds its own door; listed so the 草原 guide arrow can find its way)
   v1: [['n', 'castle', 0], ['e', 'f1', 0]],
   f1: [['w', 'v1', 0], ['n', 'h1', 0, .2], ['n', 'f2', 1, .5], ['n', 'v2', 0, .8], ['e', 't1', 2], ['s', 'v3', 0, .3], ['s', 'f3', 3, .72]],
   h1: [['s', 'f1', 0]],
@@ -1706,7 +1706,7 @@ function doInteract() {
 let talkTo = null, exitCool = 0, lockMsgAt = 0;
 function fightPlace() { return !!FIELD_CH[curScene] || AREA_KIND[curScene] === 'hub'; }
 function safePlace() { return !fightPlace() || (SCENES[curScene].village && storyPh === 'done'); }   // a saved town is safe again
-// the guide: which place to head for next, and which way to walk from here
+// the guide: which place to head for next (shown in the top chip everywhere), and which exit the yellow arrow on 草原 points to
 function storyGoal() { return !save.talked ? 'castle' : save.cleared >= LAST_CH ? '' : CH_PLACE[save.cleared + 1]; }
 function nextHop(goal) {
   if (!goal || goal === curScene) return '';
@@ -2653,7 +2653,7 @@ function frame(now) {
         ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
       } });
     }
-    if (mode === 'story' && !dlgOpen && !me.down) { const gt = guideTarget(); if (gt) {   // the yellow arrow: which way to go next
+    if (mode === 'story' && !dlgOpen && !me.down) { const gt = guideTarget(); if (gt) {   // the yellow arrow (草原 only): which exit leads to the next place
       const dx = gt.x - me.x, dy = gt.y - me.y, d = Math.hypot(dx, dy);
       if (d > 36) drawables.push({ y: 1e9, draw: () => {
         const a = Math.atan2(dy, dx), b = 26 + Math.sin(now / 160) * 3, ax = me.x + Math.cos(a) * b, ay = me.y - 12 + Math.sin(a) * b;
@@ -2663,7 +2663,7 @@ function frame(now) {
         ctx.restore();
       } });
     } }
-    if (mode === 'story') for (const ex of EXITS) {          // exits: arrows, and a fence while locked for you
+    if (mode === 'story') for (const ex of EXITS) {          // exits: small blinking arrows at every exit, and a fence while locked for you
       const locked = ex.need && save.cleared < ex.need, mx = (ex.x0 + ex.x1) / 2, my = (ex.y0 + ex.y1) / 2;
       if (locked) drawables.push({ y: ex.y1, draw: () => {
         const vertical = ex.side === 'e' || ex.side === 'w', fx0 = ex.side === 'e' ? ex.x0 + 4 : ex.side === 'w' ? ex.x1 - 8 : ex.x0, fy0 = ex.side === 's' ? ex.y0 + 4 : ex.side === 'n' ? ex.y1 - 8 : ex.y0;
