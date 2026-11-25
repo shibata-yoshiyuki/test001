@@ -6,4 +6,4 @@
   ライセンス : CC0 1.0 Universal（パブリックドメイン。クレジット表記は不要、改変・商用利用可）
                https://creativecommons.org/publicdomain/zero/1.0/
 
-使っているもの: swampy, goblin, skelet, necromancer, big_demon（各4コマを横並びの1枚にまとめ直しています）
+使っているもの: swampy, goblin, skelet, necromancer, big_demon, ogre, masked_orc, big_zombie, orc_shaman（各4コマを横並びの1枚にまとめ直しています）

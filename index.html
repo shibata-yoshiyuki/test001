@@ -104,6 +104,28 @@ button.chip { cursor: pointer; }
   font: 1.05rem var(--display); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
 }
 .buff { color: #8ff0a4; }
+.swap { position: absolute; z-index: 2; right: calc(max(14px, env(safe-area-inset-right, 0px)) + 94px); bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
+.dialog {
+  position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  width: min(640px, calc(100% - 24px)); background: rgba(12, 16, 34, .92); color: #f4f1e6;
+  border: 3px solid #e8e2c8; box-shadow: 0 0 0 3px #12162a; padding: 10px 14px 8px; cursor: pointer;
+  font: 1.05rem/1.6 var(--display); user-select: none; -webkit-user-select: none; touch-action: none;
+}
+.dlg-name { color: #ffd98a; font-size: .9rem; min-height: 1.2em; }
+.dlg-text { min-height: 3.2em; white-space: pre-wrap; }
+.dlg-next { text-align: right; font-size: .7rem; opacity: .75; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .dlg-next { animation: none; } }
+.gate {
+  position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 24px)); background: rgba(12, 16, 34, .95); color: #f4f1e6;
+  border: 3px solid #e8e2c8; padding: 14px; display: grid; gap: 10px;
+}
+.gate h3 { margin: 0; font: 1.2rem var(--display); }
+.gate-list { display: grid; gap: 6px; }
+.gate-list button { text-align: left; font: 1rem var(--display); color: #f4f1e6; background: #263055; border: 2px solid #5b6aa8; padding: 8px 10px; cursor: pointer; }
+.gate-list button:disabled { opacity: .45; cursor: default; }
+.gate-list small { display: block; font: .75rem var(--body); opacity: .85; }
 .atk span, .atk small { display: block; line-height: 1.15; }
 .atk span { font-size: .95rem; }
 .atk small { font: .72rem var(--body); opacity: .9; }
@@ -136,10 +158,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
       <div>
         <h2>部屋を作る</h2>
         <div class="row">
+          <button class="btn primary" id="create-story">ストーリーモードで作る</button>
           <button class="btn primary" id="create-coop">協力モードで作る</button>
           <button class="btn primary" id="create">対戦モードで作る</button>
         </div>
-        <p class="sub">協力：みんなで押し寄せる敵のウェーブを倒します（味方には弾が当たりません）。対戦：プレイヤー同士で撃ち合います。<br>作った人が部屋の親になります。親が抜けると部屋は終了します。</p>
+        <p class="sub">ストーリー：王様の頼みで北の魔王を倒しに行きます（全4章。進み具合はこのブラウザに保存）。協力：押し寄せる敵のウェーブをみんなで倒します。対戦：プレイヤー同士で撃ち合います。<br>作った人が部屋の親になります。親が抜けると部屋は終了します。</p>
+        <p class="sub" id="story-save"></p>
       </div>
       <div>
         <h2>部屋に入る</h2>
@@ -168,6 +192,17 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   <p class="toast" id="play-msg" role="status"></p>
   <p class="banner" id="banner" aria-live="polite"></p>
   <button class="atk" id="atk" aria-label="攻撃（スペースキー）"><span id="atk-name">ナイフ</span><small id="atk-ammo"></small></button>
+  <button class="chip swap" id="swap" hidden aria-label="武器を持ちかえる（Qキー）">持ちかえ</button>
+  <div class="dialog" id="dialog" hidden role="dialog" aria-live="polite">
+    <div class="dlg-name" id="dlg-name"></div>
+    <div class="dlg-text" id="dlg-text"></div>
+    <div class="dlg-next">▼ タップ／スペースで次へ</div>
+  </div>
+  <div class="gate" id="gate" hidden role="dialog" aria-labelledby="gate-h">
+    <h3 id="gate-h">どこへ出発する？</h3>
+    <div class="gate-list" id="gate-list"></div>
+    <button class="btn" id="gate-close">やめる</button>
+  </div>
   <div class="hud-bottom">
     <span class="chip buff" id="buff" hidden></span>
     <label class="chip"><input type="checkbox" id="run"> 走る</label>
@@ -200,11 +235,11 @@ const NAMES = CHARS.map(c => c[1]);
 const SLOT_COLORS = ['#e8c547', '#e0644f', '#5aa9e6', '#9b6be0'];   // P1..P4 tags
 const FW = 20, FH = 32, ROWS = { down: 0, left: 1, right: 2, up: 3 };
 const TILE = 16, MAX = 4;
-const MAP_W = 72, MAP_H = 54;                 // island map in tiles (the edge is sea)
-const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
+let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes with the scene)
+let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-20b';         // bump on every release; host and guests must match
+const VERSION = '2026-11-25a';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -271,6 +306,11 @@ const ENEMY_TYPES = [
   { key: 'skelet',      name: 'ガイコツ',   hp: 3,  spd: 26, fw: 16, fh: 16, sc: 1, hw: 5,  hh: 14 },
   { key: 'necromancer', name: 'まじない師', hp: 2,  spd: 22, fw: 16, fh: 23, sc: 1, hw: 6,  hh: 15, shooter: true },
   { key: 'big_demon',   name: 'ボス',       hp: 30, spd: 20, fw: 32, fh: 36, sc: 2, hw: 22, hh: 56, boss: true },
+  // story mid-bosses (guard a treasure chest; drawn at final size, hw/hh already scaled)
+  { key: 'ogre',        name: 'オーガ',       hp: 12, spd: 22, fw: 32, fh: 36, sc: 1, hw: 10, hh: 26, mid: true },
+  { key: 'masked_orc',  name: 'マスクオーク', hp: 12, spd: 34, fw: 16, fh: 23, sc: 2, hw: 12, hh: 32, mid: true },
+  { key: 'big_zombie',  name: 'ゾンビ巨人',   hp: 16, spd: 18, fw: 32, fh: 36, sc: 1, hw: 9,  hh: 26, mid: true },
+  { key: 'orc_shaman',  name: 'オーク呪術師', hp: 14, spd: 24, fw: 16, fh: 23, sc: 2, hw: 11, hh: 30, mid: true, shooter: true },
 ];
 const ENEMY_IMGS = ENEMY_TYPES.map(t => { const im = new Image(); im.src = 'assets/enemies/' + t.key + '.png'; return im; });
 const MAX_ALIVE = 24, ENEMY_BULLET = '#b45cff';
@@ -284,7 +324,7 @@ let bossFx = [];                  // quake rings / teleport puffs (everyone)
 // size / hit box of an enemy (bosses are drawn 3x, the demon 2x)
 function eDims(e) {
   const T = ENEMY_TYPES[e.type];
-  if (!e.boss) return { sc: T.sc, hw: T.hw, hh: T.hh, r: 4 };
+  if (!e.boss) return { sc: T.sc, hw: T.hw, hh: T.hh, r: T.mid ? 8 : 4 };
   const sc = T.boss ? T.sc : 3, k = sc / T.sc;
   return { sc, hw: T.hw * k, hh: T.hh * k, r: 10 };
 }
@@ -292,7 +332,73 @@ let enemies = new Map();           // id -> {id, type, x, y, hp, maxHp, face, ..
 let enemySeq = 0;
 const game = { wave: 0, phase: 'wait', until: 0, queue: [], nextSpawn: 0, banner: '' };
 let lastUI = '', lastWeaponKey = '';
-const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9, fastUntil: 0 });
+const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9, fastUntil: 0, cleared: 0, owned: new Set(['knife']) });
+// ---------- story mode ----------
+const KINGDOM = 'ドット王国';
+const CH = {
+  1: { title: '草原の異変', place: '草原',
+    intro: [{ n: '村人', t: '旅の方！ たすけてください！ スライムの群れが畑をあらしているんです！' },
+            { n: '村人', t: '群れのボス、キングスライムを倒してくれれば、きっとおとなしくなるはず……' },
+            { n: '', t: '（寄り道：草原のどこかで、オーガが宝箱を守っているらしい）' }],
+    bossLine: 'ぷるぷる……ここはワシらの草原だぁ！',
+    outro: [{ n: '村人', t: 'ありがとう！ これで畑も元どおりです！' },
+            { n: '', t: '光る門（まんなか）に入るとお城に戻れます。寄り道の中ボスがまだいれば、今のうちに！' }] },
+  2: { title: 'ゴブリンの森', place: '森',
+    intro: [{ n: '旅商人', t: 'この先の森はゴブリンに道をふさがれて、通れないんだ。' },
+            { n: '旅商人', t: 'ゴブリンキングは突進が得意だ。赤い線が見えたらよけるんだぞ！' },
+            { n: '', t: '（寄り道：森の奥で、マスクオークが宝箱を守っている……）' }],
+    bossLine: 'ギギッ！ この森はオレさまのものだ！',
+    outro: [{ n: '旅商人', t: 'すごい！ これで森の道が通れるぞ！' },
+            { n: '', t: '光る門（まんなか）に入るとお城に戻れます。' }] },
+  3: { title: 'さまよう墓地', place: '墓地',
+    intro: [{ n: '墓守', t: '夜な夜なガイコツが起き上がって困っておる……' },
+            { n: '墓守', t: 'ガイコツ大将が、魔王城の鍵を持っておるという話じゃ。' },
+            { n: '', t: '（寄り道：墓地のはずれで、ゾンビ巨人が宝箱を守っている……）' }],
+    bossLine: 'カタカタ……鍵は渡さぬぞ……',
+    outro: [{ n: '', t: 'ガイコツ大将から、魔王城の鍵を手に入れた！' },
+            { n: '', t: '光る門（まんなか）からお城に戻って、王様に報告しよう。' }] },
+  4: { title: '北の魔王城', place: '魔王城',
+    intro: [{ n: '北の魔王', t: 'よく来たな、小さき者どもよ。' },
+            { n: '北の魔王', t: 'わが手下をことごとく倒すとは……だが、ここがお前たちの墓場だ！' },
+            { n: '', t: '（寄り道：城の片すみで、オーク呪術師が宝箱を守っている……）' }],
+    bossLine: 'ゆくぞ！ わが力を思い知れ！',
+    outro: [{ n: '北の魔王', t: 'ば、ばかな……この私が……！' },
+            { n: '', t: '北の魔王を倒した！ 光る門（まんなか）からお城へ帰ろう！' }] },
+};
+const KING_LINES = [
+  [{ n: '王様', t: 'よくぞ来てくれた、旅の者たちよ。' },
+   { n: '王様', t: 'わが' + KINGDOM + 'は、北の魔王の手下たちにおびやかされておる。' },
+   { n: '王様', t: '草原ではスライムが暴れ、森ではゴブリンが道をふさぎ、墓地ではガイコツがさまよっておる……' },
+   { n: '王様', t: 'どうか北の魔王を倒し、国に平和を取り戻してくれ！' }],
+  [{ n: '王様', t: '草原を救ってくれたか！ さすがじゃ。' },
+   { n: '王様', t: '次は東の森じゃ。ゴブリンキングが道をふさいでおる。' }],
+  [{ n: '王様', t: '森を抜けたか。たのもしいのう。' },
+   { n: '王様', t: 'この先の墓地に、魔王城の鍵を守るガイコツ大将がおるそうじゃ。' }],
+  [{ n: '王様', t: 'ついに鍵を手に入れたな！' },
+   { n: '王様', t: '北の魔王城へ向かうのじゃ。……くれぐれも気をつけてな。' }],
+  [{ n: '王様', t: '北の魔王を倒してくれて、本当にありがとう！ そなたたちは国の英雄じゃ。' },
+   { n: '王様', t: '門はいつでも開いておる。また何度でも冒険に出てよいぞ。' }],
+];
+const KING_TIP = [{ n: '王様', t: '下の「出発の門」の前で「出発」を押すと、行き先を選べる。選ぶのは部屋の親じゃ。' },
+                  { n: '王様', t: '寄り道で中ボスを倒すと、宝箱から強い武器が手に入る。ひとつの宝箱はひとり分じゃぞ。' }];
+const ENDING = [{ n: '王様', t: 'おお……北の魔王を倒してくれたのか！' },
+                { n: '王様', t: KINGDOM + 'に平和が戻った。そなたたちこそ、まことの英雄じゃ！' },
+                { n: '王様', t: '国中で宴をひらこうぞ！ ……門はいつでも開いておる。また力を貸してくれ。' }];
+const CH_WAVES = { 1: [[0], [0]], 2: [[0, 1], [1]], 3: [[1, 2], [2], [1, 2]], 4: [[2, 3], [1, 3], [2, 3]] };   // enemy types per wave
+const CH_BOSS = { 1: 0, 2: 1, 3: 2, 4: 4 };                  // boss type per chapter
+const MID_FOR_CH = { 1: 5, 2: 6, 3: 7, 4: 8 };               // mid-boss type per chapter
+const CH_POOL = { 1: ['katana', 'axe'], 2: ['bow', 'red'], 3: ['hammer', 'green'], 4: ['bow', 'axe', 'katana', 'hammer', 'red', 'green'] };
+const SAVE_KEY = 'dotwalk_story_v1';
+function loadSave() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (v && typeof v === 'object') return { cleared: Math.max(0, Math.min(4, v.cleared | 0)), weapons: (Array.isArray(v.weapons) ? v.weapons : []).filter((w, i, a) => PICK_WEAPONS.includes(w) && a.indexOf(w) === i), talked: !!v.talked };
+  } catch (e) {}
+  return { cleared: 0, weapons: [], talked: false };
+}
+let save = loadSave();
+function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} renderSaveInfo(); }
+let curSeq = 0, storyPh = '', storyCh = 0;
 let screen = 'select';
 let peer = null, isHost = false, roomCode = '';
 let hostConn = null;               // client side: connection to host
@@ -322,7 +428,7 @@ $('back').addEventListener('click', () => show('select'));
 
 // ---------- 2. lobby / networking ----------
 function randomCode() { let s = ''; for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.random() * CODE_CHARS.length | 0]; return s; }
-function busy(b) { $('create').disabled = b; $('create-coop').disabled = b; $('join').disabled = b; }
+function busy(b) { $('create').disabled = b; $('create-coop').disabled = b; $('create-story').disabled = b; $('join').disabled = b; }
 
 function errorText(type) {
   return ({
@@ -335,14 +441,35 @@ function errorText(type) {
 
 $('create').addEventListener('click', () => createRoom(0, 'pvp'));
 $('create-coop').addEventListener('click', () => createRoom(0, 'coop'));
+$('create-story').addEventListener('click', () => createRoom(0, 'story'));
+function renderSaveInfo() {
+  const el = $('story-save'); if (!el) return;
+  el.replaceChildren();
+  const ws = save.weapons.map(w => WEAPONS[w].name).join('・');
+  el.append('あなたのストーリーの記録：' + (save.cleared ? (save.cleared >= 4 ? '全4章クリア！' : '第' + save.cleared + '章までクリア') : 'まだ冒険していません') + (ws ? '／持っている武器：' + ws : '') + '　');
+  if (save.cleared || save.weapons.length) {
+    const b = document.createElement('button'); b.className = 'link'; b.textContent = '記録を消す';
+    let armed = 0;
+    b.addEventListener('click', () => {
+      if (!armed) { armed = setTimeout(() => { armed = 0; b.textContent = '記録を消す'; }, 4000); b.textContent = '本当に消す？（もう一度押す）'; return; }
+      clearTimeout(armed); save = { cleared: 0, weapons: [], talked: false }; writeSave();
+    });
+    el.append(b);
+  }
+}
+renderSaveInfo();
 function createRoom(tries, m) {
   busy(true); lobbyMsg('部屋を作っています…');
   const code = randomCode();
   const p = new Peer(ID_PREFIX + code);
   p.on('open', () => {
-    peer = p; isHost = true; roomCode = code; me.slot = 1; me.x = spawnX(1); me.y = WORLD_H / 2;
+    peer = p; isHost = true; roomCode = code; me.slot = 1;
     stats.clear(); stats.set(1, freshStat());
-    mode = m; resetGame();
+    mode = m;
+    game.sq = 0; curSeq = 0; loadScene(m === 'story' ? 'town' : 'island');
+    const sp = spawnPoint(1); me.x = sp.x; me.y = sp.y;
+    if (m === 'story') { const st = stats.get(1); st.cleared = save.cleared; st.owned = new Set(['knife', ...save.weapons]); }
+    resetGame();
     p.on('connection', onHostConnection);
     enterPlay();
   });
@@ -364,7 +491,7 @@ function joinRoom() {
   let giveUp = 0, slowMsg = 0;
   p.on('open', () => {
     lobbyMsg('部屋の親につないでいます…');
-    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION } });
+    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION, sv: { c: save.cleared, w: save.weapons } } });
     slowMsg = setTimeout(() => { if (!hostConn) lobbyMsg('部屋の親につないでいます…（時間がかかっています。親の画面が開いたままか確認してください）'); }, 8000);
     giveUp = setTimeout(() => {
       if (hostConn) return;
@@ -380,7 +507,8 @@ function joinRoom() {
       }
       if (d.t === 'welcome') {
         clearTimeout(giveUp); clearTimeout(slowMsg);
-        peer = p; isHost = false; roomCode = code; hostConn = conn; me.slot = d.slot; mode = d.mode === 'coop' ? 'coop' : 'pvp';
+        peer = p; isHost = false; roomCode = code; hostConn = conn; me.slot = d.slot; mode = ['coop', 'story'].includes(d.mode) ? d.mode : 'pvp';
+        loadScene(d.sc || 'island'); curSeq = d.sq | 0;
         me.x = d.x; me.y = d.y; lastHostMsg = performance.now();
         enterPlay();
         return;
@@ -393,6 +521,10 @@ function joinRoom() {
       else if (d.t === 'hit') onHit(d);
       else if (d.t === 'respawn') onRespawn(d);
       else if (d.t === 'bfx') onBossFx(d);
+      else if (d.t === 'scene') { loadScene(d.sc); curSeq = d.sq | 0; me.x = d.x; me.y = d.y; me.down = false; }
+      else if (d.t === 'sclear') onStoryClear(d);
+      else if (d.t === 'note') toast(String(d.text));
+      else if (d.t === 'story') onStoryEvent(d);
     });
     conn.on('close', () => { if (hostConn === conn) endRoom('親が部屋を閉じたため、部屋が終了しました。'); });
   });
@@ -404,6 +536,10 @@ function joinRoom() {
 
 // host side
 function spawnX(slot) { return WORLD_W / 2 + (slot - 2.5) * 28; }
+function spawnPoint(slot) {
+  if (curScene === 'town' && DOOR) return { x: DOOR.x + (slot - 2.5) * 22, y: DOOR.y - 40 };
+  return { x: WORLD_W / 2 + (slot - 2.5) * 28, y: WORLD_H / 2 + (SCENES[curScene] && SCENES[curScene].lair ? 22 : 0) };
+}
 function freeSlot() { const used = new Set([1, ...[...conns.values()].map(v => v.slot)]); for (let s = 1; s <= MAX; s++) if (!used.has(s)) return s; return 0; }
 function onHostConnection(conn) {
   conn.on('open', () => {
@@ -413,11 +549,15 @@ function onHostConnection(conn) {
     }
     const slot = freeSlot();
     if (!slot) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); return; }
-    const st = { slot, c: Math.min(CHARS.length - 1, Math.max(0, (conn.metadata && conn.metadata.c) | 0)), x: spawnX(slot), y: WORLD_H / 2, dir: 'down', m: false };
+    const sp = spawnPoint(slot);
+    const st = { slot, c: Math.min(CHARS.length - 1, Math.max(0, (conn.metadata && conn.metadata.c) | 0)), x: sp.x, y: sp.y, dir: 'down', m: false };
     conns.set(conn.peer, { conn, slot, last: performance.now() });
-    stats.set(slot, freshStat());
+    const stt = freshStat(), sv = conn.metadata.sv || {};
+    stt.cleared = Math.max(0, Math.min(4, sv.c | 0));
+    stt.owned = new Set(['knife', ...(Array.isArray(sv.w) ? sv.w.filter(w => PICK_WEAPONS.includes(w)) : [])]);
+    stats.set(slot, stt);
     others.set(conn.peer, { ...st, dx: st.x, dy: st.y, t: 0 });
-    conn.send({ t: 'welcome', slot, x: st.x, y: st.y, mode });
+    conn.send({ t: 'welcome', slot, x: st.x, y: st.y, mode, sc: curScene, sq: curSeq });
     toast('P' + slot + '（' + (NAMES[st.c] || '？') + '）が入りました');
     renderList();
   });
@@ -425,6 +565,11 @@ function onHostConnection(conn) {
     const rec = conns.get(conn.peer); if (!rec) return;
     if (d.t === 'atk') {                        // a guest attacked: the host decides with its own weapon record
       performAttack({ id: String(d.id), slot: rec.slot, w: String(d.w), x: +d.x, y: +d.y, ax: +d.ax || 0, ay: +d.ay || 0 }, conn.peer);
+      return;
+    }
+    if (d.t === 'equip') {                      // story: switch to a weapon you own
+      const st = stats.get(rec.slot);
+      if (st && st.owned.has(String(d.w))) { st.weapon = String(d.w); syncFromStats(); }
       return;
     }
     if (d.t !== 's') return;
@@ -494,7 +639,10 @@ function attackFx(a) {
     });
   } else fx.push({ kind: W.kind, w: a.w, slot: a.slot, x: a.x, y: a.y, base, t: now });
 }
-function fire(aimX, aimY) {
+function fire(aimX, aimY, held) {
+  if (dlgOpen) { if (!held) nextLine(); return; }                 // reading: the button turns pages
+  if ($('gate') && !$('gate').hidden) return;
+  if (mode === 'story' && curScene === 'town') { if (!held && interact) doInteract(); return; }   // no fighting in the castle
   const now = performance.now();
   const W = WEAPONS[me.w] || WEAPONS.knife;
   if (screen !== 'play' || !peer || me.down || now - me.lastShot < W.cd) return;
@@ -507,7 +655,7 @@ function fire(aimX, aimY) {
   if (isHost) performAttack(a, null);
   else {
     attackFx(a);                                   // show it right away
-    if (me.w !== 'knife') { me.ammo--; if (me.ammo <= 0) { me.w = 'knife'; me.ammo = 0; } }
+    if (me.w !== 'knife' && mode !== 'story') { me.ammo--; if (me.ammo <= 0) { me.w = 'knife'; me.ammo = 0; } }
     if (hostConn && hostConn.open) hostConn.send({ t: 'atk', ...a });
   }
 }
@@ -518,7 +666,7 @@ function performAttack(a, fromPeer) {
   const wk = WEAPONS[st.weapon] ? st.weapon : 'knife', W = WEAPONS[wk];
   if (now - st.lastAtk < W.cd * 0.75) return;      // too fast: ignore
   st.lastAtk = now;
-  if (wk !== 'knife') { st.ammo--; if (st.ammo <= 0) { st.weapon = 'knife'; st.ammo = 0; } }
+  if (wk !== 'knife' && mode !== 'story') { st.ammo--; if (st.ammo <= 0) { st.weapon = 'knife'; st.ammo = 0; } }   // story weapons never run out
   const att = { ...a, w: wk };
   broadcast({ t: 'atk', ...att }, wk === a.w ? fromPeer : null);   // the attacker already drew it, unless the weapon differs
   attackFx(att);
@@ -534,7 +682,7 @@ function resolveMelee(att, W, now) {
     if (d > W.reach + rad) return false;
     return d < rad + 3 || angleDiff(Math.atan2(dy, dx), base) <= W.arc;
   };
-  if (mode === 'coop') {
+  if (mode !== 'pvp') {
     for (const e of [...enemies.values()]) { const D = eDims(e); if (inArc(e.x, e.y - D.hh / 2, D.hw)) hitEnemy(e, att.slot, W.dmg, '', true); }
   } else {
     for (const t of playerTargets()) if (t.slot !== att.slot && inArc(t.x, t.y - 12, 7)) damagePlayer(t.slot, t.x - att.x, t.y - att.y, att.slot, '', now, true);
@@ -545,7 +693,7 @@ function resolveSlam(att, W) {
   const st = stats.get(att.slot); if (!st || st.down) return;
   const p = att.slot === me.slot ? me : otherBySlot(att.slot); if (!p) return;
   const now = performance.now(), cx = p.x, cy = p.y - 8;
-  if (mode === 'coop') {
+  if (mode !== 'pvp') {
     for (const e of [...enemies.values()]) { const D = eDims(e); if (Math.hypot(e.x - cx, e.y - D.hh / 2 - cy) <= W.radius + D.hw) hitEnemy(e, att.slot, W.dmg, '', true); }
   } else {
     for (const t of playerTargets()) if (t.slot !== att.slot && Math.hypot(t.x - cx, t.y - 12 - cy) <= W.radius + 6) damagePlayer(t.slot, t.x - cx, t.y - cy, att.slot, '', now, true);
@@ -556,10 +704,16 @@ function hitEnemy(e, by, dmg, shotId, keep) {
   e.hp -= dmg;
   if (shotId && !keep) shots.delete(shotId);
   const st = stats.get(by);
+  if (T.mid && !e.aggro) wakeMids(e);
   if (e.hp <= 0) {
     enemies.delete(e.id); if (st) st.ko++;
-    if (e.boss) { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
-    else {
+    if (T.mid) { spawnPickup('chest', e.x, e.y, { ch: game.ch }); toast(slotName(by) + 'が' + T.name + 'を倒した！ 宝箱が出た！'); }
+    else if (e.boss && mode === 'story') { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropItem('food', e.x, e.y); }
+    else if (e.boss) { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
+    else if (mode === 'story') {                  // story: small enemies never drop weapons
+      const r = Math.random();
+      if (r < 0.08) dropItem('food', e.x, e.y); else if (r < 0.14) dropItem('drink', e.x, e.y);
+    } else {
       const r = Math.random();
       if (r < 0.06) dropWeapon(e.x, e.y);
       else if (r < 0.14) dropItem('food', e.x, e.y);
@@ -571,7 +725,7 @@ function hitEnemy(e, by, dmg, shotId, keep) {
 }
 function nearestFoe(sh, maxD) {    // for homing shots
   let best = null, bd = maxD;
-  if (mode === 'coop') {
+  if (mode !== 'pvp') {
     for (const e of enemies.values()) { const x = isHost ? e.x : e.dx, y = isHost ? e.y : e.dy, d = Math.hypot(x - sh.x, y - sh.y); if (d < bd) { bd = d; best = { x, y }; } }
   } else {
     const cand = [{ slot: me.slot, x: me.x, y: me.y, down: me.down }, ...[...others.values()].map(o => ({ slot: o.slot, x: o.dx, y: o.dy, down: o.down }))];
@@ -606,7 +760,7 @@ function stepShots(dt, now) {
     }
     if (!isHost) continue;                      // only the host decides hits
     const oy = sh.y - 12;                       // where the shot is drawn
-    if (sh.slot !== 0 && mode === 'coop') {     // co-op: player shots hit enemies only
+    if (sh.slot !== 0 && mode !== 'pvp') {      // co-op / story: player shots hit enemies only
       for (const e of [...enemies.values()]) {
         if (sh.hits.has('e' + e.id)) continue;
         const D = eDims(e);
@@ -627,9 +781,9 @@ function stepShots(dt, now) {
   }
 }
 // ---------- weapons on the ground ----------
-function spawnPickup(w, x, y) {
-  if (pickups.size >= 10) pickups.delete(pickups.keys().next().value);
-  const id = ++pickSeq; pickups.set(id, { id, w, x, y }); return id;
+function spawnPickup(w, x, y, extra) {
+  if (pickups.size >= 10) { const old = [...pickups.values()].find(p => p.w !== 'chest'); if (old) pickups.delete(old.id); }
+  const id = ++pickSeq; pickups.set(id, { id, w, x, y, ...(extra || {}) }); return id;
 }
 function randomWeapon() { return PICK_WEAPONS[Math.random() * PICK_WEAPONS.length | 0]; }
 function dropAt(key, x, y) {
@@ -650,15 +804,28 @@ function stepPickups(now) {      // host
     for (const t of alivePlayers()) {
       if (Math.abs(t.x - pk.x) < 11 && Math.abs(t.y - pk.y) < 9) {
         const st = stats.get(t.slot);
+        let w = pk.w, chest = 0;
         if (pk.w === 'food') { if (st.life >= LIFE_MAX) continue; st.life++; }     // full life: leave the cake for someone else
         else if (pk.w === 'drink') st.fastUntil = now + FAST_MS;
+        else if (pk.w === 'chest') {           // story: one chest = one weapon for one person, kept forever
+          if (st.chestSq === game.sq) { if (!st.chestHint) { st.chestHint = true; sendNote(t.slot, 'この章の宝箱はもう1つあけました。残りの宝箱は仲間のぶんです'); } continue; }
+          st.chestSq = game.sq; st.chestHint = false;
+          const pick = a => a[Math.random() * a.length | 0];
+          const pool = CH_POOL[pk.ch] || PICK_WEAPONS, fresh = pool.filter(k => !st.owned.has(k)), fresh2 = PICK_WEAPONS.filter(k => !st.owned.has(k));
+          w = fresh.length ? pick(fresh) : fresh2.length ? pick(fresh2) : pick(pool);
+          st.owned.add(w); st.weapon = w; st.ammo = 0; chest = 1;
+        }
         else { st.weapon = pk.w; st.ammo = WEAPON_USES; }
-        const msg = { t: 'pick', id: pk.id, slot: t.slot, w: pk.w };
+        const msg = { t: 'pick', id: pk.id, slot: t.slot, w, chest };
         broadcast(msg); onPick(msg); syncFromStats();
         break;
       }
     }
   }
+}
+function sendNote(slot, text) {     // host: a message for one player only
+  if (slot === me.slot) { toast(text); return; }
+  for (const rec of conns.values()) if (rec.slot === slot && rec.conn.open) rec.conn.send({ t: 'note', text });
 }
 function onPick(d) {
   pickups.delete(d.id);
@@ -674,13 +841,25 @@ function onPick(d) {
     return;
   }
   const W = WEAPONS[d.w]; if (!W) return;
+  if (d.chest) {
+    const p = d.slot === me.slot ? me : otherBySlot(d.slot);
+    if (p) sparks.push({ x: p === me ? me.x : p.dx, y: (p === me ? me.y : p.dy) - 14, t: performance.now(), col: '255, 215, 90' });
+    if (d.slot === me.slot) {
+      me.w = d.w; me.ammo = 0;
+      if (!save.weapons.includes(d.w)) save.weapons.push(d.w);
+      writeSave();
+      banner('宝箱をあけた！<small>' + W.name + 'を手に入れた（ずっと使える／「持ちかえ」かQキーで切りかえ）</small>', 3500);
+    } else { const o = otherBySlot(d.slot); if (o) o.w = d.w; toast(slotName(d.slot) + 'が宝箱から' + W.name + 'を手に入れた！'); }
+    refreshListIfChanged();
+    return;
+  }
   if (d.slot === me.slot) { me.w = d.w; me.ammo = WEAPON_USES; toast(W.name + 'を手に入れた！（' + WEAPON_USES + '回使えます）'); }
   else { const o = otherBySlot(d.slot); if (o) o.w = d.w; }
   refreshListIfChanged();
 }
 function applyPickups(list) {
   pickups.clear();
-  for (const [id, w, x, y] of list) if (WEAPONS[w] || ITEMS[w]) pickups.set(id, { id, w, x, y });
+  for (const [id, w, x, y] of list) if (WEAPONS[w] || ITEMS[w] || w === 'chest') pickups.set(id, { id, w, x, y });
 }
 function spawnWaveRewards() {   // co-op: one weapon per player when a wave is cleared
   const ps = alivePlayers().length ? alivePlayers() : playerTargets();
@@ -700,7 +879,7 @@ function damagePlayer(slot, kx, ky, by, shotId, now, keep) {
   st.life = Math.max(0, st.life - 1); st.invUntil = now + INV_MS;
   if (st.life === 0) {
     st.down = true;
-    st.downUntil = mode === 'coop' ? Infinity : now + DOWN_MS;     // co-op: revive when the wave is cleared
+    st.downUntil = mode !== 'pvp' ? Infinity : now + DOWN_MS;     // co-op / story: revive when the wave is cleared
     const bySt = stats.get(by); if (by && bySt) bySt.ko++;
   }
   const v = Math.hypot(kx, ky) || 1;
@@ -721,7 +900,7 @@ function onHit(d) {
     const kx = me.x + d.kx * 10, ky = me.y + d.ky * 10;      // knockback
     if (canStand(kx, ky)) { me.x = kx; me.y = ky; }
     target = null;
-    if (d.life <= 0) { me.down = true; toast((d.by ? slotName(d.by) : '敵') + 'にやられた！ ' + (mode === 'coop' ? 'ウェーブを倒しきると復活します' : '3秒後に復活します')); }
+    if (d.life <= 0) { me.down = true; toast((d.by ? slotName(d.by) : '敵') + 'にやられた！ ' + (mode !== 'pvp' ? 'ウェーブを倒しきると復活します' : '3秒後に復活します')); }
   } else if (victim) {
     victim.life = d.life; victim.inv = true;
     if (d.life <= 0) { victim.down = true; toast(!d.by ? slotName(d.victim) + 'がやられた！' : d.by === me.slot ? slotName(d.victim) + 'を倒した！' : slotName(d.by) + 'が' + slotName(d.victim) + 'を倒した'); }
@@ -788,6 +967,46 @@ function sendBossFx(k, x, y) { const m = { t: 'bfx', k, x: Math.round(x), y: Mat
 function onBossFx(d) {
   bossFx.push({ k: d.k, x: d.x, y: d.y, t: performance.now() });
   if (d.k === 'rage') toast('魔王が怒った！ 攻撃が激しくなる！');
+  if (d.k === 'wake') toast('中ボスが目を覚ました！ 倒すと宝箱が出る');
+}
+// ---------- story: mid-bosses ----------
+function wakeMids(src) {
+  let woke = false;
+  for (const o of enemies.values()) if (ENEMY_TYPES[o.type].mid && !o.aggro) { o.aggro = true; woke = true; }
+  if (woke) sendBossFx('wake', src.x, src.y);
+}
+function spawnMids(ch, n) {
+  if (!LAIR || !MID_FOR_CH[ch]) return;
+  const type = MID_FOR_CH[ch], T = ENEMY_TYPES[type];
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2, s = standableNear(LAIR.x + Math.cos(a) * 24, LAIR.y + Math.sin(a) * 16, 8) || LAIR;
+    const e = { id: ++enemySeq, type, boss: false, aggro: false, lv: ch, x: s.x, y: s.y, hp: T.hp, maxHp: T.hp, face: i % 2 ? -1 : 1, cd: 1.5 + i * .4, wx: 0, wy: 0, wt: 0, pat: 0 };
+    enemies.set(e.id, e);
+  }
+}
+function midStep(e, T, dt, now, tgt, best, ux, uy, ps) {
+  if (!e.aggro) { if (tgt && best < 120) wakeMids(e); return { stop: true }; }
+  e.stT = (e.stT || 0) - dt;
+  if (LAIR && Math.hypot(e.x - LAIR.x, e.y - LAIR.y) > 230) {      // stays near its treasure
+    const d = Math.hypot(LAIR.x - e.x, LAIR.y - e.y) || 1;
+    return { vx: (LAIR.x - e.x) / d, vy: (LAIR.y - e.y) / d, spd: T.spd * 1.3 };
+  }
+  if (!tgt) return { stop: true };
+  if (e.act === 1) {
+    if (e.stT <= 0) {
+      e.act = 0;
+      const b = Math.atan2(uy, ux);
+      if (T.key === 'ogre') { sendBossFx('quake', e.x, e.y); for (const p of ps) if (Math.hypot(p.x - e.x, (p.y - e.y) * 1.4) < 42) damagePlayer(p.slot, p.x - e.x, p.y - e.y, 0, '', now); ringShots(e, 6, 60); }
+      else if (T.key === 'masked_orc') { for (const da of [-.25, 0, .25]) enemyShot(e, Math.cos(b + da), Math.sin(b + da), 130, 170); }
+      else if (T.key === 'big_zombie') ringShots(e, 10, 65);
+      else for (const da of [-.5, -.25, 0, .25, .5]) enemyShot(e, Math.cos(b + da), Math.sin(b + da), 95, 220);
+    }
+    return { stop: true };
+  }
+  e.cd -= dt;
+  if (e.cd <= 0 && best < 200) { e.act = 1; e.stT = .5; e.cd = T.key === 'masked_orc' ? 1.8 : 2.6; return { stop: true }; }
+  if (T.shooter) { if (best < 80) return { vx: -ux, vy: -uy, spd: T.spd }; if (best > 130) return { vx: ux, vy: uy, spd: T.spd }; return { vx: -uy * .6, vy: ux * .6, spd: T.spd }; }
+  return { vx: ux, vy: uy, spd: T.spd };
 }
 function spawnMinion(type, near, lv) {
   for (let i = 0; i < 12; i++) {
@@ -899,6 +1118,7 @@ function stepEnemies(dt, now) {
     const ux = tgt ? (tgt.x - e.x) / (best || 1) : 0, uy = tgt ? (tgt.y - e.y) / (best || 1) : 0;
     let mv;
     if (e.boss) mv = bossStep(e, T, dt, now, tgt, best, ux, uy, ps);
+    else if (T.mid) mv = midStep(e, T, dt, now, tgt, best, ux, uy, ps);
     else if (tgt) {
       if (T.shooter) {             // keep some distance and shoot
         let vx, vy;
@@ -940,6 +1160,7 @@ function waveQueue(w, nPlayers) {
 function resetGame() {
   enemies.clear(); game.queue = []; game.banner = '';
   for (const id of [...shots.keys()]) if (shots.get(id).slot === 0) shots.delete(id);
+  if (mode === 'story') { game.scene = 'town'; game.ch = 0; game.phase = 'town'; game.ending = false; return; }
   if (mode === 'coop') { game.wave = 1; game.phase = 'rest'; game.until = performance.now() + 4000; game.startAt = performance.now(); }
   else { game.wave = 0; game.phase = 'wait'; }
 }
@@ -986,16 +1207,93 @@ function stepWaves(now) {        // host, co-op only
     for (const st of stats.values()) { st.ko = 0; st.weapon = 'knife'; st.ammo = 0; st.life = LIFE_MAX; }
   }
 }
+function partyMax() { return Math.max(save.cleared, ...[...stats.values()].map(st => st.cleared || 0)); }
+function mainLeft() { let n = 0; for (const e of enemies.values()) if (!ENEMY_TYPES[e.type].mid) n++; return n; }
+function changeScene(sc) {          // host: everybody moves to another map
+  game.sq = (game.sq || 0) + 1; game.scene = sc;
+  loadScene(sc); curSeq = game.sq;
+  enemies.clear(); pickups.clear(); shots.clear();
+  const now = performance.now();
+  for (const st of stats.values()) { st.down = false; st.downUntil = 0; st.life = LIFE_MAX; st.invUntil = now + 1500; st.fastUntil = 0; }
+  const sp = spawnPoint(me.slot); me.x = sp.x; me.y = sp.y; me.down = false;
+  for (const [pid, rec] of conns) {
+    const p = spawnPoint(rec.slot), o = others.get(pid);
+    if (o) { o.x = o.dx = p.x; o.y = o.dy = p.y; }
+    if (rec.conn.open) rec.conn.send({ t: 'scene', sc, sq: game.sq, x: p.x, y: p.y });
+  }
+  syncFromStats();
+}
+function startChapter(ch) {
+  if (!isHost || mode !== 'story' || ch > Math.min(4, partyMax() + 1)) return;
+  game.ch = ch; changeScene('ch' + ch);
+  game.phase = 'intro'; game.until = performance.now() + 8000; game.waveIdx = 0; game.queue = []; game.bossName = '';
+  spawnMids(ch, Math.max(1, stats.size));          // one mid-boss (one chest) per player
+}
+function startWave(now) {
+  const types = CH_WAVES[game.ch][game.waveIdx]; game.waveIdx++;
+  const mult = 1 + 0.5 * (stats.size - 1), count = Math.round((3 + game.ch + game.waveIdx * 2) * mult);
+  game.queue = []; for (let i = 0; i < count; i++) game.queue.push({ type: types[Math.random() * types.length | 0], mult: 1 });
+  game.phase = 'fight'; game.nextSpawn = now;
+}
+function stepStory(now) {           // host
+  if (game.scene === 'town') return;
+  const anyAlive = [...stats.values()].some(st => !st.down);
+  if (['intro', 'fight', 'rest', 'boss'].includes(game.phase) && !anyAlive && stats.size) {
+    game.phase = 'over'; game.until = now + 5000; game.queue = [];
+    for (const e of [...enemies.values()]) if (!ENEMY_TYPES[e.type].mid) enemies.delete(e.id);
+    for (const id of [...shots.keys()]) if (shots.get(id).slot === 0) shots.delete(id);
+    return;
+  }
+  if (game.phase === 'intro' && now >= game.until) startWave(now);
+  else if (game.phase === 'fight') {
+    if (game.queue.length && now >= game.nextSpawn && enemies.size < MAX_ALIVE) { const q = game.queue.shift(); spawnEnemy(q.type, q.mult); game.nextSpawn = now + 600; }
+    if (!game.queue.length && !mainLeft()) {
+      reviveAll(now);
+      if (game.waveIdx < CH_WAVES[game.ch].length) { game.phase = 'rest'; game.until = now + 3000; }
+      else {
+        const bt = CH_BOSS[game.ch];
+        spawnEnemy(bt, 1 + 0.5 * (stats.size - 1), true, game.ch);
+        game.phase = 'boss'; game.bossName = BOSS_NAMES[bt];
+      }
+    }
+  } else if (game.phase === 'rest' && now >= game.until) startWave(now);
+  else if (game.phase === 'boss' && !mainLeft()) {
+    game.phase = 'done';
+    reviveAll(now);
+    for (const st of stats.values()) { if (!st.down) st.life = Math.min(LIFE_MAX, st.life + 1); st.cleared = Math.max(st.cleared || 0, game.ch); }
+    const m = { t: 'sclear', ch: game.ch }; broadcast(m); onStoryClear(m);    // plan A: everyone here gets the clear
+  } else if (game.phase === 'done') {
+    if (!anyAlive) reviveAll(now);
+    if (PORTAL && alivePlayers().some(p => Math.hypot(p.x - PORTAL.x, p.y - PORTAL.y) < 16)) {
+      const ending = game.ch === 4;
+      game.ch = 0; changeScene('town'); game.phase = 'town';
+      if (ending) { const m = { t: 'story', k: 'ending' }; broadcast(m); onStoryEvent(m); }
+    }
+  } else if (game.phase === 'over' && now >= game.until) { game.ch = 0; changeScene('town'); game.phase = 'town'; }
+}
+function onStoryClear(d) {
+  const ch = d.ch | 0;
+  if (ch > save.cleared) { save.cleared = Math.min(4, ch); }
+  writeSave();
+  toast('記録しました：第' + ch + '章クリア！');
+}
+function onStoryEvent(d) {
+  if (d.k === 'ending') say(ENDING, () => banner('おしまい<small>遊んでくれてありがとう！ 門からまた冒険に出られます</small>', 7000));
+}
 function gameOut() {
+  if (mode === 'story') {
+    const nw = (CH_WAVES[game.ch] || []).length;
+    return { m: 'story', sc: game.scene, sq: game.sq | 0, ch: game.ch, ph: game.phase, w: game.waveIdx | 0, nw, left: game.queue.length + mainLeft(), bn: game.bossName || '', t: Math.max(0, Math.ceil((game.until - performance.now()) / 1000)) };
+  }
   if (mode !== 'coop') return { m: 'pvp' };
   return { m: 'coop', w: game.wave, ph: game.phase, t: Math.max(0, Math.ceil((game.until - performance.now()) / 1000)), left: game.queue.length + enemies.size, bn: game.bossName || '', res: game.phase === 'win' ? game.result : '' };
 }
-function enemiesOut() { return [...enemies.values()].map(e => [e.id, e.type, Math.round(e.x), Math.round(e.y), e.hp, e.face, e.maxHp, e.boss ? 1 : 0, e.act || 0, e.act === 2 && e.jp !== undefined ? Math.round(e.jp * 100) : Math.round((e.ang || 0) * 100), e.rage ? 1 : 0, Math.round(e.jx1 || 0), Math.round(e.jy1 || 0)]); }
+function enemiesOut() { return [...enemies.values()].map(e => [e.id, e.type, Math.round(e.x), Math.round(e.y), e.hp, e.face, e.maxHp, e.boss ? 1 : 0, e.act || 0, e.act === 2 && e.jp !== undefined ? Math.round(e.jp * 100) : Math.round((e.ang || 0) * 100), e.rage ? 1 : 0, Math.round(e.jx1 || 0), Math.round(e.jy1 || 0), e.aggro ? 1 : 0]); }
 function applyEnemies(list) {     // guest: follow the host's enemies
   const next = new Map();
-  for (const [id, type, x, y, hp, face, maxHp, boss, act, p, rage, jx1, jy1] of list) {
+  for (const [id, type, x, y, hp, face, maxHp, boss, act, p, rage, jx1, jy1, aggro] of list) {
     const prev = enemies.get(id);
-    next.set(id, { id, type, x, y, hp, face, maxHp, boss: !!boss, act: act | 0, jp: (p | 0) / 100, ang: (p | 0) / 100, rage: !!rage, jx1, jy1, dx: prev ? prev.dx : x, dy: prev ? prev.dy : y, flash: prev ? prev.flash : 0 });
+    next.set(id, { id, type, x, y, hp, face, maxHp, boss: !!boss, act: act | 0, jp: (p | 0) / 100, ang: (p | 0) / 100, rage: !!rage, jx1, jy1, aggro: !!aggro, dx: prev ? prev.dx : x, dy: prev ? prev.dy : y, flash: prev ? prev.flash : 0 });
   }
   enemies = next;
 }
@@ -1005,7 +1303,30 @@ function banner(html, ms) {
   clearTimeout(bannerTimer);
   if (ms) bannerTimer = setTimeout(() => { el.classList.add('fade'); setTimeout(() => { if (el.classList.contains('fade')) el.innerHTML = ''; }, 500); }, ms);
 }
+function ensureScene(g) {           // guest: follow the host to another map if a message was missed
+  if (isHost || !g.sc) return;
+  if (g.sc !== curScene || (g.sq | 0) !== curSeq) { loadScene(g.sc); curSeq = g.sq | 0; const p = spawnPoint(me.slot); me.x = p.x; me.y = p.y; }
+}
+function storyUI(g) {
+  const C = CH[g.ch];
+  const chip = g.sc === 'town' ? 'ストーリー　お城' : 'ストーリー　第' + g.ch + '章 ' + (C ? C.place : '') +
+    (g.ph === 'fight' ? '　WAVE ' + g.w + '/' + g.nw + '　残り ' + g.left : g.ph === 'boss' ? '　ボス戦：' + g.bn : g.ph === 'done' ? '　クリア！ 光る門へ' : '');
+  if ($('mode-chip').textContent !== chip) $('mode-chip').textContent = chip;
+  storyPh = g.ph; storyCh = g.ch;
+  const key = g.sq + ':' + g.ph + ':' + g.w;
+  if (key === lastUI) return;
+  lastUI = key;
+  if (g.ph === 'town') { banner(''); if (!save.talked) toast('王様に近づいて「はなす」を押してみよう'); }
+  else if (g.ph === 'intro' && C) { banner('第' + g.ch + '章<small>' + C.title + '</small>', 3500); say(C.intro); }
+  else if (g.ph === 'fight') banner('WAVE ' + g.w + ' / ' + g.nw, 1500);
+  else if (g.ph === 'rest') banner('WAVE ' + (g.w) + ' クリア！<small>次の敵が来る……</small>', 2500);
+  else if (g.ph === 'boss' && C) { banner('ボス出現！<small>' + g.bn + '</small>', 2500); say([{ n: g.bn, t: C.bossLine }]); }
+  else if (g.ph === 'done' && C) { banner('第' + g.ch + '章 クリア！', 4000); say(C.outro); }
+  else if (g.ph === 'over') banner('全滅……<small>お城に戻ります</small>', 4500);
+}
 function updateGameUI(g) {
+  ensureScene(g);
+  if (g.m === 'story') { mode = 'story'; storyUI(g); return; }
   mode = g.m === 'coop' ? 'coop' : 'pvp';
   if (mode !== 'coop') { $('mode-chip').textContent = '対戦'; return; }
   const chip = (g.ph === 'win' ? '協力　ゲームクリア！' : '協力　WAVE ' + g.w + ' / ' + LAST_WAVE) + (g.ph === 'fight' ? '　残り ' + g.left + '　→ ボス' : g.ph === 'boss' ? '　ボス戦：' + g.bn : g.ph === 'rest' ? '　まもなく開始' : '');
@@ -1025,7 +1346,7 @@ function randomLandSpot() {
   for (let i = 0; i < 500; i++) {
     const x = (Math.random() * WORLD_W) | 0, y = (Math.random() * WORLD_H) | 0;
     const ty = Math.floor(y / TILE), tx = Math.floor(x / TILE);
-    if (ty >= 0 && tx >= 0 && ty < MAP_H && tx < MAP_W && land[ty][tx] && !beach[ty][tx] && canStand(x, y)) return { x, y };
+    if (ty >= 0 && tx >= 0 && ty < MAP_H && tx < MAP_W && land[ty][tx] && !beach[ty][tx] && reach[ty][tx] && canStand(x, y)) return { x, y };
   }
   return { x: WORLD_W / 2, y: WORLD_H / 2 };
 }
@@ -1038,7 +1359,7 @@ function netTick() {
       if (st.down && now >= st.downUntil) {
         st.down = false; st.life = LIFE_MAX; st.invUntil = now + 1500;
         let p = randomLandSpot();
-        if (mode === 'coop') {
+        if (mode !== 'pvp') {
           const mates = alivePlayers().filter(q => q.slot !== slot);
           const m = mates[Math.random() * mates.length | 0];
           if (m) for (let i = 0; i < 20; i++) { const x = m.x + (Math.random() - .5) * 60, y = m.y + (Math.random() - .5) * 40; if (canStand(x, y)) { p = { x, y }; break; } }
@@ -1048,11 +1369,12 @@ function netTick() {
       }
     }
     if (mode === 'coop') stepWaves(now);
+    else if (mode === 'story') stepStory(now);
     syncFromStats();
     const ps = [myState(), ...[...others.values()].map(o => ({ slot: o.slot, c: o.c, x: o.x, y: o.y, dir: o.dir, m: o.m, ...statOut(o.slot) }))];
-    const g = gameOut();
+    const g = { ...gameOut(), sc: curScene, sq: curSeq };
     stepPickups(now);
-    broadcast({ t: 'all', ps, g, en: mode === 'coop' ? enemiesOut() : undefined, pk: [...pickups.values()].map(p => [p.id, p.w, Math.round(p.x), Math.round(p.y)]) });
+    broadcast({ t: 'all', ps, g, en: mode !== 'pvp' ? enemiesOut() : undefined, pk: [...pickups.values()].map(p => [p.id, p.w, Math.round(p.x), Math.round(p.y)]) });
     updateGameUI(g);
   } else if (hostConn) {
     if (now - lastHostMsg > TIMEOUT_MS) { endRoom('親との通信が途切れたため、部屋から出ました。'); return; }
@@ -1074,7 +1396,7 @@ function enterPlay() {
   $('room-code').textContent = roomCode;
   $('copy-msg').textContent = '';
   toast(isHost ? 'この部屋コードか招待リンクを、一緒に遊ぶ人に送ってください。（スマホの親は、送ったらすぐこの画面に戻ってください）' : '部屋に入りました。');
-  updateGameUI(isHost ? gameOut() : { m: mode, w: 1, ph: 'rest', t: 0, left: 0 });
+  if (isHost || mode !== 'story') updateGameUI(isHost ? { ...gameOut(), sc: curScene, sq: curSeq } : { m: mode, w: 1, ph: 'rest', t: 0, left: 0 });
   history.replaceState(null, '', '?room=' + roomCode);
   renderList();
   show('play');
@@ -1090,6 +1412,8 @@ function endRoom(msg) {
   enemies = new Map(); bossFx = []; game.queue = []; game.phase = 'wait'; lastUI = ''; banner(''); $('mode-chip').textContent = '';
   Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0, fastUntil: 0 });
   fx = []; pickups.clear();
+  dlgQueue = []; if (dlgTyping) clearInterval(dlgTyping); dlgTyping = 0; dlgOpen = false; $('dialog').hidden = true; $('gate').hidden = true; $('swap').hidden = true;
+  storyPh = ''; storyCh = 0; renderSaveInfo();
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   document.body.style.overflow = '';
@@ -1146,6 +1470,8 @@ function renderList() {
 const KEYMAP = { KeyW: 'up', KeyA: 'left', KeyS: 'down', KeyD: 'right', ArrowUp: 'up', ArrowLeft: 'left', ArrowDown: 'down', ArrowRight: 'right' };
 const ATTACK_KEYS = new Set(['Space', 'KeyJ', 'Enter']);
 addEventListener('keydown', e => {
+  if (e.code === 'KeyQ' && screen === 'play' && !e.repeat) { cycleWeapon(); return; }
+  if (e.code === 'Escape' && !$('gate').hidden) { $('gate').hidden = true; return; }
   if (ATTACK_KEYS.has(e.code) && screen === 'play' && !(e.target instanceof HTMLInputElement && e.target.type === 'text')) {
     e.preventDefault(); atkHeld = true; if (!e.repeat) fire(); return;
   }
@@ -1155,6 +1481,59 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { if (ATTACK_KEYS.has(e.code)) atkHeld = false; const d = KEYMAP[e.code]; if (d) me.held.delete(d); });
 addEventListener('blur', () => { me.held.clear(); atkHeld = false; });
+// ---------- story: talking, the gate, switching weapons ----------
+let dlgQueue = [], dlgOpen = false, dlgDone = null, dlgTyping = 0, dlgFull = '', interact = null;
+function say(lines, onDone) {
+  if (!lines || !lines.length) return;
+  dlgQueue = lines.slice(); dlgDone = onDone || null; dlgOpen = true; $('dialog').hidden = false; nextLine(true);
+}
+function nextLine(first) {
+  if (!first && dlgTyping) { clearInterval(dlgTyping); dlgTyping = 0; $('dlg-text').textContent = dlgFull; return; }
+  const l = dlgQueue.shift();
+  if (!l) { dlgOpen = false; $('dialog').hidden = true; const f = dlgDone; dlgDone = null; if (f) f(); return; }
+  if (dlgTyping) clearInterval(dlgTyping);
+  $('dlg-name').textContent = l.n || ''; dlgFull = l.t; $('dlg-text').textContent = '';
+  let i = 0;
+  dlgTyping = setInterval(() => { i += 2; $('dlg-text').textContent = dlgFull.slice(0, i); if (i >= dlgFull.length) { clearInterval(dlgTyping); dlgTyping = 0; } }, 28);
+}
+$('dialog').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); nextLine(); });
+function doInteract() {
+  if (interact === 'talk') {
+    const lines = KING_LINES[Math.min(4, save.cleared)].concat(save.cleared < 4 ? KING_TIP : []);
+    say(lines);
+    if (!save.talked) { save.talked = true; writeSave(); }
+  } else if (interact === 'gate') {
+    if (isHost) openGate();
+    else toast('出発先は部屋の親（P1）が選びます。親に門の前で「出発」を押してもらってください。');
+  }
+}
+function openGate() {
+  const max = partyMax(), list = $('gate-list');
+  list.replaceChildren();
+  for (let ch = 1; ch <= 4; ch++) {
+    const b = document.createElement('button'), open = ch <= Math.min(4, max + 1);
+    b.disabled = !open;
+    b.append('第' + ch + '章　' + CH[ch].title);
+    const sm = document.createElement('small');
+    sm.textContent = !open ? 'まだ行けません（前の章をクリアすると開きます）' : max >= ch ? 'クリア済み（もう一度行けます）' : 'つぎの目的地';
+    b.append(sm);
+    b.addEventListener('click', () => { $('gate').hidden = true; startChapter(ch); });
+    list.append(b);
+  }
+  $('gate').hidden = false;
+}
+$('gate-close').addEventListener('click', () => { $('gate').hidden = true; });
+function ownedWeapons() { return ['knife', ...save.weapons]; }
+function cycleWeapon() {
+  if (mode !== 'story' || curScene === 'town') return;
+  const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。寄り道の中ボスを倒して宝箱をあけよう'); return; }
+  const w = list[(list.indexOf(me.w) + 1) % list.length];
+  me.w = w;
+  if (isHost) { const st = stats.get(me.slot); if (st && st.owned.has(w)) st.weapon = w; syncFromStats(); }
+  else if (hostConn && hostConn.open) hostConn.send({ t: 'equip', w });
+  toast(WEAPONS[w].name + 'に持ちかえた');
+}
+$('swap').addEventListener('click', cycleWeapon);
 {
   const b = $('atk');
   const on = e => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); b.classList.add('on'); atkHeld = true; fire(); };
@@ -1245,20 +1624,51 @@ function faceOf(vx, vy) { return Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 'left' 
 
 // ---------- 3. play: render ----------
 ctx.imageSmoothingEnabled = false;
-// island: seeded so every player sees the same map
-const land = [], beach = [], obst = [];   // obst: 0 none, 1 rock, 2 tree
-const world = document.createElement('canvas'); world.width = WORLD_W; world.height = WORLD_H;
-(() => {
-  let seed = 20261106; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+// maps are built from a fixed seed per scene, so every player sees the same one
+const land = [], beach = [], obst = [], reach = [];   // obst: 0 none, 1 low (rock...), 2 tall (tree...), 3 invisible block
+const world = document.createElement('canvas');
+const THEMES = {
+  grass:  { g: ['#4a6b45', '#46663f'], sp: ['#55794f', '#3d5a3a'], deco: 'flowers', b: '#e3d29c', bs: ['#d3bf83', '#efe2b6'], deep: '#2a6f93', shal: '#3f8fb0', foam: '#d7eef5', wave: 'rgba(220, 242, 250, .55)', shadow: 'rgba(20, 40, 18, .35)' },
+  forest: { g: ['#3f5d3a', '#3b5836'], sp: ['#4b6f45', '#32502e'], deco: 'mushrooms', b: '#7a6a48', bs: ['#6b5c3e', '#8a7a55'], deep: '#245066', shal: '#2f6a80', foam: '#bfe0e6', wave: 'rgba(200, 230, 240, .45)', shadow: 'rgba(12, 28, 12, .4)' },
+  grave:  { g: ['#4f5749', '#4b5345'], sp: ['#5c6556', '#3f463b'], deco: 'bones', b: '#6e6a5e', bs: ['#5e5a50', '#7d796c'], deep: '#1d2830', shal: '#2a3a45', foam: '#8fa3ad', wave: 'rgba(150, 180, 190, .35)', shadow: 'rgba(10, 14, 10, .4)' },
+  demon:  { g: ['#3b3446', '#37303f'], sp: ['#463e52', '#2f2937'], deco: 'cracks', b: '#2a2430', bs: ['#3a3240', '#201b26'], deep: '#8f2c16', shal: '#c24a1a', foam: '#ffb347', wave: 'rgba(255, 210, 120, .6)', shadow: 'rgba(0, 0, 0, .4)' },
+  castle: { deep: '#221d2b', wave: null, shadow: 'rgba(0, 0, 0, .3)' },
+};
+const SCENES = {
+  island: { w: 72, h: 54, seed: 20261106, oseed: 4242, theme: 'grass', fth: .64, pT: .3, pTl: .035, pR: .025 },
+  town:   { hall: true, w: 26, h: 20, theme: 'castle' },
+  ch1: { w: 56, h: 42, seed: 1101, oseed: 1102, theme: 'grass',  fth: .68, pT: .26, pTl: .02,  pR: .03,  lair: true },
+  ch2: { w: 56, h: 42, seed: 2201, oseed: 2202, theme: 'forest', fth: .52, pT: .32, pTl: .06,  pR: .015, lair: true },
+  ch3: { w: 56, h: 42, seed: 3301, oseed: 3302, theme: 'grave',  fth: .6,  pT: .14, pTl: .03,  pR: .07,  lair: true },
+  ch4: { w: 56, h: 42, seed: 4401, oseed: 4402, theme: 'demon',  fth: .62, pT: .12, pTl: .015, pR: .05,  lair: true },
+};
+let curScene = '', THEME = THEMES.grass, LAIR = null, KING = null, DOOR = null, PORTAL = null;
+function loadScene(sc) {
+  if (!SCENES[sc]) sc = 'island';
+  buildWorld(sc);
+  shots.clear(); fx = []; bossFx = []; pickups.clear(); target = null;
+  if (!isHost) enemies = new Map();
+  if (typeof $ === 'function' && $('gate')) $('gate').hidden = true;
+}
+function buildWorld(sc) {
+  const S = SCENES[sc];
+  curScene = sc; THEME = THEMES[S.theme];
+  MAP_W = S.w; MAP_H = S.h; WORLD_W = MAP_W * TILE; WORLD_H = MAP_H * TILE;
+  land.length = 0; beach.length = 0; obst.length = 0; reach.length = 0;
+  world.width = WORLD_W; world.height = WORLD_H;
+  LAIR = KING = DOOR = null; PORTAL = { x: WORLD_W / 2, y: WORLD_H / 2 };
+  if (S.hall) { buildHall(S); return; }
+  let seed = S.seed; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   // value noise for a ragged coastline
   const G = 6, gw = Math.ceil(MAP_W / G) + 2, gh = Math.ceil(MAP_H / G) + 2, grid = [];
   for (let i = 0; i < gw * gh; i++) grid.push(rnd());
   const sm = t => t * t * (3 - 2 * t);
-  const noise = (x, y) => {
+  const noiseOf = gr => (x, y) => {
     const gx = x / G, gy = y / G, ix = Math.floor(gx), iy = Math.floor(gy), fx = sm(gx - ix), fy = sm(gy - iy);
-    const v = (a, b) => grid[(iy + b) * gw + (ix + a)];
+    const v = (a, b) => gr[(iy + b) * gw + (ix + a)];
     return (v(0, 0) * (1 - fx) + v(1, 0) * fx) * (1 - fy) + (v(0, 1) * (1 - fx) + v(1, 1) * fx) * fy;
   };
+  const noise = noiseOf(grid);
   for (let y = 0; y < MAP_H; y++) {
     land.push([]); beach.push([]);
     for (let x = 0; x < MAP_W; x++) {
@@ -1273,33 +1683,54 @@ const world = document.createElement('canvas'); world.width = WORLD_W; world.hei
     beach[y].push(land[y][x] && nearSea);
   }
   // trees and rocks: own seed so the ground pattern above stays the same
-  let s2 = 4242; const r2 = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+  let s2 = S.oseed; const r2 = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
   const fgrid = []; for (let i = 0; i < gw * gh; i++) fgrid.push(r2());
-  const forest = (x, y) => {
-    const gx = x / G, gy = y / G, ix = Math.floor(gx), iy = Math.floor(gy), fx = sm(gx - ix), fy = sm(gy - iy);
-    const v = (a, b) => fgrid[(iy + b) * gw + (ix + a)];
-    return (v(0, 0) * (1 - fx) + v(1, 0) * fx) * (1 - fy) + (v(0, 1) * (1 - fx) + v(1, 1) * fx) * fy;
-  };
+  const forest = noiseOf(fgrid);
   for (let y = 0; y < MAP_H; y++) {
     obst.push([]);
     for (let x = 0; x < MAP_W; x++) {
       let o = 0;
       if (land[y][x] && !beach[y][x] && Math.hypot(x - MAP_W / 2, y - MAP_H / 2) > 6) {
-        const pTree = forest(x, y) > .64 ? .3 : .035, r = r2();
-        if (r < pTree) o = 2; else if (r < pTree + .025) o = 1;
+        const pTree = forest(x, y) > S.fth ? S.pT : S.pTl, r = r2();
+        if (r < pTree) o = 2; else if (r < pTree + S.pR) o = 1;
       }
       obst[y].push(o);
     }
   }
-  const f = world.getContext('2d');
+  const flood = () => {             // which tiles can be reached on foot from the middle
+    reach.length = 0;
+    for (let y = 0; y < MAP_H; y++) reach.push(new Array(MAP_W).fill(false));
+    const cx = MAP_W / 2 | 0, cy = MAP_H / 2 | 0, q = [[cx, cy]]; reach[cy][cx] = true;
+    while (q.length) {
+      const [x, y] = q.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H || reach[ny][nx] || !land[ny][nx] || obst[ny][nx]) continue;
+        reach[ny][nx] = true; q.push([nx, ny]);
+      }
+    }
+  };
+  flood();
+  if (S.lair) {                     // the side-quest clearing where the mid-bosses guard their chests
+    const cand = [];
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+      const d = Math.hypot(x - MAP_W / 2, y - MAP_H / 2);
+      if (d >= 14 && d <= 20 && reach[y][x] && !beach[y][x]) cand.push([x, y]);
+    }
+    const [lx, ly] = cand.length ? cand[r2() * cand.length | 0] : [MAP_W / 2 + 15 | 0, MAP_H / 2 | 0];
+    for (let y = ly - 3; y <= ly + 3; y++) for (let x = lx - 3; x <= lx + 3; x++) if (y >= 0 && x >= 0 && y < MAP_H && x < MAP_W && Math.hypot(x - lx, y - ly) <= 3.2) obst[y][x] = 0;
+    LAIR = { x: lx * TILE + 8, y: ly * TILE + 10 };
+    flood();
+  }
+  const T = THEME, f = world.getContext('2d');
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     const px = x * TILE, py = y * TILE;
     if (!land[y][x]) {
       let shallow = false;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isLand(x + dx, y + dy)) shallow = true;
-      f.fillStyle = shallow ? '#3f8fb0' : '#2a6f93'; f.fillRect(px, py, TILE, TILE);
+      f.fillStyle = shallow ? T.shal : T.deep; f.fillRect(px, py, TILE, TILE);
       if (shallow) {   // foam along the shore
-        f.fillStyle = '#d7eef5';
+        f.fillStyle = T.foam;
         if (isLand(x, y - 1)) f.fillRect(px, py, TILE, 1);
         if (isLand(x, y + 1)) f.fillRect(px, py + TILE - 1, TILE, 1);
         if (isLand(x - 1, y)) f.fillRect(px, py, 1, TILE);
@@ -1308,27 +1739,79 @@ const world = document.createElement('canvas'); world.width = WORLD_W; world.hei
       continue;
     }
     if (beach[y][x]) {
-      f.fillStyle = '#e3d29c'; f.fillRect(px, py, TILE, TILE);
-      for (let k = 0; k < 4; k++) { f.fillStyle = rnd() > .5 ? '#d3bf83' : '#efe2b6'; f.fillRect(px + (rnd() * 15 | 0), py + (rnd() * 15 | 0), 1, 1); }
+      f.fillStyle = T.b; f.fillRect(px, py, TILE, TILE);
+      for (let k = 0; k < 4; k++) { f.fillStyle = rnd() > .5 ? T.bs[0] : T.bs[1]; f.fillRect(px + (rnd() * 15 | 0), py + (rnd() * 15 | 0), 1, 1); }
       continue;
     }
-    f.fillStyle = (x + y) % 2 ? '#4a6b45' : '#46663f'; f.fillRect(px, py, TILE, TILE);
-    for (let k = 0; k < 3; k++) { f.fillStyle = rnd() > .5 ? '#55794f' : '#3d5a3a'; f.fillRect(px + (rnd() * 14 | 0), py + (rnd() * 14 | 0), 2, 1); }
+    f.fillStyle = (x + y) % 2 ? T.g[0] : T.g[1]; f.fillRect(px, py, TILE, TILE);
+    if (T.deco === 'cracks') { f.fillStyle = 'rgba(0,0,0,.25)'; f.fillRect(px, py + 15, TILE, 1); f.fillRect(px + 15, py, 1, TILE); }
+    for (let k = 0; k < 3; k++) { f.fillStyle = rnd() > .5 ? T.sp[0] : T.sp[1]; f.fillRect(px + (rnd() * 14 | 0), py + (rnd() * 14 | 0), 2, 1); }
     const r = rnd();
-    if (r < .06) {            // small flowers
-      const c = ['#f2e15c', '#f5f5f5', '#e98aa6'][rnd() * 3 | 0];
-      const fx = px + 3 + (rnd() * 9 | 0), fy = py + 3 + (rnd() * 9 | 0);
-      f.fillStyle = c; f.fillRect(fx, fy, 1, 1); f.fillRect(fx + 3, fy + 2, 1, 1);
-    } else if (r < .09) {     // grass tuft
-      const fx = px + 4 + (rnd() * 7 | 0), fy = py + 5 + (rnd() * 7 | 0);
-      f.fillStyle = '#6a9a5c'; f.fillRect(fx, fy, 1, 3); f.fillRect(fx + 2, fy + 1, 1, 2); f.fillRect(fx - 2, fy + 1, 1, 2);
+    const fx = px + 3 + (rnd() * 9 | 0), fy = py + 3 + (rnd() * 9 | 0);
+    if (T.deco === 'flowers') {
+      if (r < .06) { f.fillStyle = ['#f2e15c', '#f5f5f5', '#e98aa6'][rnd() * 3 | 0]; f.fillRect(fx, fy, 1, 1); f.fillRect(fx + 3, fy + 2, 1, 1); }
+      else if (r < .09) { f.fillStyle = '#6a9a5c'; f.fillRect(fx, fy, 1, 3); f.fillRect(fx + 2, fy + 1, 1, 2); f.fillRect(fx - 2, fy + 1, 1, 2); }
+    } else if (T.deco === 'mushrooms' && r < .05) {
+      f.fillStyle = '#e0e0d0'; f.fillRect(fx + 1, fy + 2, 1, 2); f.fillStyle = rnd() > .5 ? '#d9534f' : '#c99a5b'; f.fillRect(fx, fy, 3, 2);
+    } else if (T.deco === 'bones' && r < .05) {
+      f.fillStyle = '#d8d4c4'; f.fillRect(fx, fy, 4, 1); f.fillRect(fx - 1, fy - 1, 1, 1); f.fillRect(fx + 4, fy + 1, 1, 1);
+    } else if (T.deco === 'cracks' && r < .06) {
+      f.fillStyle = '#6b2a1a'; f.fillRect(fx, fy, 3, 1); f.fillRect(fx + 2, fy + 1, 2, 1);
     }
-    if (obst[y][x]) {        // ground shadow under trees / rocks
-      f.fillStyle = 'rgba(20, 40, 18, .35)';
-      f.fillRect(px + 2, py + 12, 12, 3); f.fillRect(px + 4, py + 15, 8, 1);
+    if (obst[y][x]) { f.fillStyle = T.shadow; f.fillRect(px + 2, py + 12, 12, 3); f.fillRect(px + 4, py + 15, 8, 1); }
+  }
+  if (LAIR) {                       // dark clearing with a ring of stones
+    f.fillStyle = 'rgba(0, 0, 0, .16)'; f.beginPath(); f.ellipse(LAIR.x, LAIR.y, 46, 32, 0, 0, Math.PI * 2); f.fill();
+    for (let i = 0; i < 14; i++) {
+      const a = i / 14 * Math.PI * 2, sx = Math.round(LAIR.x + Math.cos(a) * 46), sy = Math.round(LAIR.y + Math.sin(a) * 32);
+      f.fillStyle = '#5d6168'; f.fillRect(sx - 2, sy - 1, 4, 3); f.fillStyle = '#9ea3aa'; f.fillRect(sx - 1, sy - 1, 2, 1);
     }
   }
-})();
+}
+function buildHall(S) {             // the castle throne room (story hub)
+  const w = S.w, h = S.h, cx = w / 2 | 0;
+  for (let y = 0; y < h; y++) {
+    land.push([]); beach.push([]); obst.push([]); reach.push([]);
+    for (let x = 0; x < w; x++) {
+      const inside = x >= 2 && x <= w - 3 && y >= 3 && y <= h - 3;
+      const doorway = y === h - 2 && (x === cx - 1 || x === cx);
+      land[y].push(inside || doorway); beach[y].push(false); obst[y].push(0); reach[y].push(inside || doorway);
+    }
+  }
+  for (const py of [6, 10, 14]) for (const px of [5, w - 6]) obst[py][px] = 2;   // pillars
+  obst[4][cx - 1] = obst[4][cx] = 3; obst[5][cx - 1] = obst[5][cx] = 3;         // throne + king
+  KING = { x: cx * TILE, y: 5 * TILE + 14 };
+  DOOR = { x: cx * TILE, y: (h - 2) * TILE + 6 };
+  PORTAL = null;
+  const f = world.getContext('2d');
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const px = x * TILE, py = y * TILE;
+    if (land[y][x]) {
+      f.fillStyle = (x + y) % 2 ? '#8b8478' : '#857e72'; f.fillRect(px, py, TILE, TILE);
+      f.fillStyle = 'rgba(40, 30, 30, .25)'; f.fillRect(px, py + 15, TILE, 1); f.fillRect(px + 15, py, 1, TILE);
+      if ((x === cx - 1 || x === cx) && y >= 6) {                                // red carpet
+        f.fillStyle = '#9e2b2b'; f.fillRect(px, py, TILE, TILE);
+        f.fillStyle = '#d7a945'; if (x === cx - 1) f.fillRect(px, py, 2, TILE); else f.fillRect(px + 14, py, 2, TILE);
+      }
+    } else if (y < 3) {                                                            // back wall with bricks
+      f.fillStyle = '#4b4458'; f.fillRect(px, py, TILE, TILE);
+      f.fillStyle = '#3a3446'; f.fillRect(px, py + 7, TILE, 1); f.fillRect(px, py + 15, TILE, 1); f.fillRect(px + ((y % 2) ? 4 : 12), py, 1, 7); f.fillRect(px + ((y % 2) ? 12 : 4), py + 8, 1, 7);
+      if (y === 2) { f.fillStyle = '#6a6278'; f.fillRect(px, py + 14, TILE, 2); }
+    } else { f.fillStyle = '#221d2b'; f.fillRect(px, py, TILE, TILE); }
+  }
+  for (const bx of [4, 8, w - 9, w - 5]) {                                       // banners
+    const px = bx * TILE + 3, py = 1 * TILE - 6;
+    f.fillStyle = '#b3242c'; f.fillRect(px, py, 10, 26); f.fillStyle = '#7a1a20'; f.fillRect(px + 9, py, 1, 26);
+    f.fillStyle = '#e8c547'; f.fillRect(px + 3, py + 8, 4, 4); f.fillRect(px, py + 24, 2, 3); f.fillRect(px + 4, py + 24, 2, 3); f.fillRect(px + 8, py + 24, 2, 3);
+  }
+  { const px = (cx - 1) * TILE + 2, py = 3 * TILE - 4;                           // throne
+    f.fillStyle = '#7a1a20'; f.fillRect(px + 4, py, 20, 26); f.fillStyle = '#d7a945'; f.fillRect(px + 2, py - 4, 24, 4); f.fillRect(px + 2, py, 3, 30); f.fillRect(px + 23, py, 3, 30);
+    f.fillStyle = '#b3242c'; f.fillRect(px + 7, py + 3, 14, 18); f.fillStyle = '#e8c547'; f.fillRect(px + 12, py - 8, 4, 4); }
+  { const px = (cx - 1) * TILE, py = (h - 2) * TILE;                              // the gate (door out)
+    f.fillStyle = '#2b1d12'; f.fillRect(px - 4, py - 6, 40, 22); f.fillStyle = '#6b4a2b'; f.fillRect(px, py - 2, 32, 18);
+    f.fillStyle = '#4a321d'; f.fillRect(px + 15, py - 2, 2, 18); f.fillRect(px, py + 6, 32, 1);
+    f.fillStyle = '#ffd36b'; f.fillRect(px - 4, py - 7, 40, 1); f.fillRect(px - 5, py - 6, 1, 22); f.fillRect(px + 36, py - 6, 1, 22); }
+}
 // pixel-art sprites for trees (2 kinds) and rocks (2 kinds), drawn once
 function makeSprite(w, h, paint) { const c = document.createElement('canvas'); c.width = w; c.height = h; paint(c.getContext('2d')); return c; }
 function blobPaint(g, blobs, w, h, colors) {
@@ -1355,8 +1838,48 @@ const ROCK_SPRITES = [false, true].map(moss => makeSprite(16, 13, g => {
   blobPaint(g, [[8, 8, 6], [5, 9, 4], [11, 9, 4]], 16, 13, { edge: '#474c52', hi: '#bfc4c9', mid: '#959aa1', base: '#7b8087', low: '#666b72', lx: 7, ly: 6, lowY: 9 });
   if (moss) { g.fillStyle = '#6e8f4e'; [[6, 3], [7, 3], [8, 3], [5, 4], [9, 4], [7, 4]].forEach(([x, y]) => g.fillRect(x, y, 1, 1)); }
 }));
+const DARK_TREES = [
+  [[13, 12, 10], [7, 16, 7], [19, 16, 7], [13, 6, 6]],
+  [[13, 11, 9], [8, 15, 6], [18, 15, 6], [13, 18, 6]],
+].map(blobs => makeSprite(26, 34, g => {
+  g.fillStyle = '#3a2717'; g.fillRect(10, 22, 6, 12); g.fillStyle = '#583c23'; g.fillRect(11, 22, 4, 11);
+  blobPaint(g, blobs, 26, 26, { edge: '#152a14', hi: '#4f8a42', mid: '#356a30', base: '#2a5527', low: '#1f421d', lx: 13, ly: 11, lowY: 19 });
+}));
+const DEAD_TREES = [0, 1].map(v => makeSprite(26, 34, g => {
+  const c1 = '#4a3d33', c2 = '#6e5c4c';
+  g.fillStyle = c1; g.fillRect(11, 12, 4, 22); g.fillStyle = c2; g.fillRect(12, 12, 1, 21);
+  const br = v ? [[13, 14, -1, -1, 8], [13, 18, 1, -1, 9], [13, 10, 1, -1, 5]] : [[13, 13, 1, -1, 9], [13, 17, -1, -1, 9], [13, 9, -1, -1, 5]];
+  for (const [x0, y0, dx, dy, n] of br) for (let i = 0; i < n; i++) { g.fillStyle = i % 3 ? c1 : c2; g.fillRect(x0 + dx * i, y0 + dy * Math.floor(i / 2), 2, 2); }
+}));
+const TOMBS = [0, 1].map(v => makeSprite(14, 18, g => {
+  g.fillStyle = '#3e4246'; g.fillRect(1, 3, 12, 15); g.fillRect(3, 1, 8, 2);
+  g.fillStyle = v ? '#8a8f95' : '#7d8288'; g.fillRect(2, 3, 10, 14); g.fillRect(4, 2, 6, 1);
+  g.fillStyle = '#a9aeb3'; g.fillRect(3, 4, 2, 10);
+  g.fillStyle = '#4f5459'; if (v) { g.fillRect(6, 5, 2, 8); g.fillRect(4, 7, 6, 2); } else { g.fillRect(4, 7, 6, 1); g.fillRect(4, 10, 6, 1); }
+}));
+const PILLAR = (c) => makeSprite(26, 34, g => {
+  g.fillStyle = c.edge; g.fillRect(6, 2, 14, 4); g.fillRect(8, 6, 10, 24); g.fillRect(6, 29, 14, 5);
+  g.fillStyle = c.base; g.fillRect(7, 3, 12, 2); g.fillRect(9, 6, 8, 23); g.fillRect(7, 30, 12, 3);
+  g.fillStyle = c.hi; g.fillRect(10, 6, 2, 23); g.fillStyle = c.low; g.fillRect(15, 6, 2, 23);
+});
+const PILLARS = [PILLAR({ edge: '#3a3446', base: '#a59d8f', hi: '#c9c1b2', low: '#7d766a' }), PILLAR({ edge: '#3a3446', base: '#a59d8f', hi: '#c9c1b2', low: '#7d766a' })];
+const DARK_PILLARS = [PILLAR({ edge: '#140f1a', base: '#4a3f58', hi: '#6a5c7c', low: '#33293f' }), PILLAR({ edge: '#140f1a', base: '#4a3f58', hi: '#6a5c7c', low: '#33293f' })];
+const DARK_ROCKS = [0, 1].map(v => makeSprite(16, 13, g => {
+  blobPaint(g, [[8, 8, 6], [5, 9, 4], [11, 9, 4]], 16, 13, { edge: '#140f1a', hi: '#7b6a8f', mid: '#54486a', base: '#3f3550', low: '#2e2640', lx: 7, ly: 6, lowY: 9 });
+  if (v) { g.fillStyle = '#ff7a2a'; g.fillRect(7, 6, 1, 3); g.fillRect(8, 8, 1, 2); }
+}));
+const OB_SPRITES = {
+  grass: { 1: ROCK_SPRITES, 2: TREE_SPRITES },
+  forest: { 1: [ROCK_SPRITES[1], ROCK_SPRITES[1]], 2: DARK_TREES },
+  grave: { 1: TOMBS, 2: DEAD_TREES },
+  demon: { 1: DARK_ROCKS, 2: DARK_PILLARS },
+  castle: { 1: ROCK_SPRITES, 2: PILLARS },
+};
+const KING_IMG = new Image(); KING_IMG.src = 'assets/story/king.png';
+const CHEST_IMG = new Image(); CHEST_IMG.src = 'assets/story/chest.png';
+buildWorld('island');
 // blocking boxes inside a tile (x0, y0, x1, y1)
-const OB_BOX = { 1: [1, 4, 15, 15], 2: [4, 8, 12, 16] };
+const OB_BOX = { 1: [1, 4, 15, 15], 2: [4, 8, 12, 16], 3: [0, 0, 16, 16] };
 function obstacleAt(px, py) {
   const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
   if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
@@ -1368,16 +1891,17 @@ function pushObstacleDrawables(list) {     // only those near the screen
   const x0 = Math.floor(camX / TILE) - 1, y0 = Math.floor(camY / TILE) - 1;
   const x1 = Math.ceil((camX + VW) / TILE) + 1, y1 = Math.ceil((camY + VH) / TILE) + 3;
   for (let y = Math.max(0, y0); y < Math.min(MAP_H, y1); y++) for (let x = Math.max(0, x0); x < Math.min(MAP_W, x1); x++) {
-    const o = obst[y][x]; if (!o) continue;
+    const o = obst[y][x]; if (!o || o === 3) continue;
     const v = ((x * 7 + y * 13) % 2);
     const bx = x * TILE + 8, by = y * TILE + 15;
+    const set = OB_SPRITES[SCENES[curScene].theme] || OB_SPRITES.grass, im = set[o][v];
     if (o === 2) list.push({ y: by, draw: () => {
       const behind = me.y < by && me.y > by - 30 && Math.abs(me.x - bx) < 15;   // you are behind this tree: see through it
       if (behind) ctx.globalAlpha = .5;
-      ctx.drawImage(TREE_SPRITES[v], bx - 13, by - 33);
+      ctx.drawImage(im, bx - (im.width >> 1), by - im.height + 1);
       ctx.globalAlpha = 1;
     } });
-    else list.push({ y: by, draw: () => ctx.drawImage(ROCK_SPRITES[v], bx - 8, by - 12) });
+    else list.push({ y: by, draw: () => ctx.drawImage(im, bx - (im.width >> 1), by - im.height + 1) });
   }
 }
 function walkable(px, py) {
@@ -1388,9 +1912,10 @@ function canStand(x, y) {   // small box around the feet
   return walkable(x - 5, y) && walkable(x + 5, y) && walkable(x - 5, y - 4) && walkable(x + 5, y - 4);
 }
 function drawWaves(now) {   // little moving highlights on visible sea tiles
+  if (!THEME.wave) return;
   const x0 = Math.floor(camX / TILE) - 1, y0 = Math.floor(camY / TILE) - 1;
   const x1 = Math.ceil((camX + VW) / TILE) + 1, y1 = Math.ceil((camY + VH) / TILE) + 1;
-  ctx.fillStyle = 'rgba(220, 242, 250, .55)';
+  ctx.fillStyle = THEME.wave;
   for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
     const inMap = x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
     if (inMap && land[y][x]) continue;
@@ -1409,7 +1934,7 @@ function drawSpeedTrail(x, y, now) {
   for (let i = 0; i < 3; i++) ctx.fillRect(Math.round(x) - 9 + ((i + ph) % 3) * 6, Math.round(y) - 1 - i % 2, 3, 1);
 }
 function drawPickup(pk, now) {
-  const W = WEAPONS[pk.w], im = W ? W_IMGS[W.icon] : ITEM_IMGS[pk.w]; if (!im || !im.complete || !im.naturalWidth) return;
+  const W = WEAPONS[pk.w], im = pk.w === 'chest' ? CHEST_IMG : W ? W_IMGS[W.icon] : ITEM_IMGS[pk.w]; if (!im || !im.complete || !im.naturalWidth) return;
   const bob = Math.round(Math.sin(now / 250 + pk.id) * 2), sc = im.height > 24 ? .5 : 1;
   const w = Math.round(im.width * sc), h = Math.round(im.height * sc), x = Math.round(pk.x), y = Math.round(pk.y);
   ctx.fillStyle = 'rgba(255, 240, 150, .35)'; ctx.beginPath(); ctx.ellipse(x, y - 1, 8, 3, 0, 0, Math.PI * 2); ctx.fill();
@@ -1445,16 +1970,20 @@ function drawEnemy(e, x, y, now) {
     else ctx.drawImage(im, f * T.fw, 0, T.fw, T.fh, dx, dy, w, h);
   }
   ctx.globalAlpha = 1;
-  if (e.boss && act === 1) {                      // "!" before every boss attack
+  if ((e.boss || T.mid) && act === 1) {           // "!" before every boss attack
     ctx.fillStyle = '#ffd23f'; ctx.fillRect(Math.round(x) - 1, dy - 16, 3, 7); ctx.fillRect(Math.round(x) - 1, dy - 7, 3, 2);
   }
   if (e.boss && T.key === 'goblin' && act === 3) { // dizzy
     for (let i = 0; i < 3; i++) { const a = now / 200 + i * 2.1; ctx.fillStyle = '#fff46b'; ctx.fillRect(Math.round(x + Math.cos(a) * 12), Math.round(dy + 4 + Math.sin(a) * 4), 2, 2); }
   }
+  if (T.mid && !e.aggro) {                        // sleeping mid-boss
+    const zz = (now / 500 | 0) % 3; ctx.fillStyle = '#e8e2c8';
+    for (let i = 0; i <= zz; i++) { const zx = Math.round(x) + 6 + i * 5, zy = dy - 6 - i * 5; ctx.fillRect(zx, zy, 4, 1); ctx.fillRect(zx + 2, zy + 1, 1, 1); ctx.fillRect(zx + 1, zy + 2, 1, 1); ctx.fillRect(zx, zy + 3, 4, 1); }
+  }
   if (e.boss || e.maxHp > 1) {        // health bar
-    const bw = e.boss ? 40 : 12, bx = Math.round(x - bw / 2), by = dy - 4;
+    const bw = e.boss ? 40 : T.mid ? 24 : 12, bx = Math.round(x - bw / 2), by = dy - 4;
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 4);
-    ctx.fillStyle = e.boss ? '#ff4d6d' : '#f2c14e'; ctx.fillRect(bx, by, Math.max(0, Math.round(bw * e.hp / e.maxHp)), 2);
+    ctx.fillStyle = e.boss ? '#ff4d6d' : T.mid ? '#ff9f43' : '#f2c14e'; ctx.fillRect(bx, by, Math.max(0, Math.round(bw * e.hp / e.maxHp)), 2);
   }
 }
 function drawChar(c, x, y, dir, frame, slot, isMe, p = {}) {
@@ -1522,11 +2051,11 @@ function frame(now) {
       me.t += dt * (run ? 12 : 8);
     }
     if (!me.m) me.t = 0;
-    if (!canStand(me.x, me.y)) { me.x = WORLD_W / 2; me.y = WORLD_H / 2; }   // safety net: never stuck in the sea
+    if (!canStand(me.x, me.y)) { const sp = spawnPoint(me.slot); me.x = sp.x; me.y = sp.y; }   // safety net: never stuck in the sea
     camX = Math.round(me.x - VW / 2); camY = Math.round(me.y - 16 - VH / 2);
-    if (atkHeld) fire();
+    if (atkHeld) fire(undefined, undefined, true);
     stepShots(dt, now);
-    if (isHost && mode === 'coop') stepEnemies(dt, now);
+    if (isHost && mode !== 'pvp') stepEnemies(dt, now);
     else for (const e of enemies.values()) {
       const k = 1 - Math.pow(0.001, dt);
       if (Math.hypot(e.x - e.dx, e.y - e.dy) > 60) { e.dx = e.x; e.dy = e.y; }
@@ -1536,11 +2065,22 @@ function frame(now) {
     const fastLeft = Math.ceil((me.fastUntil - now) / 1000);
     const buffTxt = fastLeft > 0 ? 'はやい！ のこり' + fastLeft + '秒' : '';
     if ($('buff').textContent !== buffTxt) { $('buff').textContent = buffTxt; $('buff').hidden = !buffTxt; }
-    const wkey = me.w + ':' + me.ammo;
+    interact = null;
+    if (mode === 'story' && curScene === 'town' && !dlgOpen) {
+      if (KING && Math.hypot(me.x - KING.x, me.y - KING.y) < 36) interact = 'talk';
+      else if (DOOR && Math.hypot(me.x - DOOR.x, me.y - DOOR.y) < 34) interact = 'gate';
+    }
+    const inTown = mode === 'story' && curScene === 'town';
+    const wkey = me.w + ':' + me.ammo + ':' + interact + ':' + inTown + ':' + dlgOpen + ':' + mode;
     if (wkey !== lastWeaponKey) {
       lastWeaponKey = wkey;
-      $('atk-name').textContent = (WEAPONS[me.w] || WEAPONS.knife).name;
-      $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : 'のこり ' + me.ammo;
+      if (dlgOpen) { $('atk-name').textContent = 'つぎへ'; $('atk-ammo').textContent = ''; }
+      else if (inTown) { $('atk-name').textContent = interact === 'talk' ? 'はなす' : interact === 'gate' ? '出発' : '－'; $('atk-ammo').textContent = interact ? '' : '王様か門へ'; }
+      else {
+        $('atk-name').textContent = (WEAPONS[me.w] || WEAPONS.knife).name;
+        $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
+      }
+      $('swap').hidden = !(mode === 'story' && !inTown && save.weapons.length > 0);
     }
 
     // smooth other players toward their latest reported position
@@ -1552,7 +2092,7 @@ function frame(now) {
     }
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#2a6f93'; ctx.fillRect(0, 0, VW, VH);          // open sea beyond the map
+    ctx.fillStyle = THEME.deep; ctx.fillRect(0, 0, VW, VH);         // open sea beyond the map
     ctx.setTransform(1, 0, 0, 1, -camX, -camY);                       // world space
     ctx.drawImage(world, 0, 0);
     drawWaves(now);
@@ -1630,6 +2170,21 @@ function frame(now) {
       drawables.push({ y: ey, draw: () => drawEnemy(e, ex, ey, now) });
     }
     pushObstacleDrawables(drawables);
+    if (curScene === 'town' && KING) drawables.push({ y: KING.y, draw: () => {
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(KING.x - 6, KING.y - 1, 12, 2);
+      if (KING_IMG.complete && KING_IMG.naturalWidth) ctx.drawImage(KING_IMG, (Math.floor(now / 250) % 4) * 16, 0, 16, 28, KING.x - 8, KING.y - 27, 16, 28);
+      if (interact === 'talk' || !save.talked) { const b = (now / 300 | 0) % 2; ctx.fillStyle = '#fff'; ctx.fillRect(KING.x + 6, KING.y - 38 - b, 9, 7); ctx.fillStyle = '#222'; ctx.fillRect(KING.x + 8, KING.y - 35 - b, 1, 1); ctx.fillRect(KING.x + 10, KING.y - 35 - b, 1, 1); ctx.fillRect(KING.x + 12, KING.y - 35 - b, 1, 1); }
+    } });
+    if (mode === 'story' && storyPh === 'done' && PORTAL && curScene !== 'town') drawables.push({ y: PORTAL.y - 8, draw: () => {
+      ctx.save();
+      for (let i = 0; i < 3; i++) {
+        const p = ((now / 900) + i / 3) % 1;
+        ctx.globalAlpha = 1 - p; ctx.strokeStyle = i % 2 ? '#c9a8ff' : '#ffffff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(PORTAL.x, PORTAL.y, 6 + 12 * p, (6 + 12 * p) * .55, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.globalAlpha = .5; ctx.fillStyle = '#b48cff'; ctx.beginPath(); ctx.ellipse(PORTAL.x, PORTAL.y, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } });
     for (const pk of pickups.values()) drawables.push({ y: pk.y, draw: () => drawPickup(pk, now) });
     drawables.sort((a, b) => a.y - b.y).forEach(d => d.draw());
     sparks = sparks.filter(sp => now - sp.t < 300);
@@ -1653,7 +2208,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 if (typeof Peer === 'undefined') {
-  $('create').disabled = $('create-coop').disabled = $('join').disabled = true;
+  $('create').disabled = $('create-coop').disabled = $('create-story').disabled = $('join').disabled = true;
   lobbyMsg('通信用の部品を読み込めませんでした。ページを再読み込みしてください。', true);
 }
 </script>
