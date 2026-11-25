@@ -234,7 +234,7 @@ let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes w
 let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-25h';         // bump on every release; host and guests must match
+const VERSION = '2026-11-25i';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -336,13 +336,12 @@ const LAST_CH = 5, KEY_CH = 4;      // KEY_CH: the boss whose map shows the way 
 const CH = {
   1: { title: 'スライムの丘', place: '丘',
     intro: [{ n: '村人', t: '丘のスライムの群れを、どうか追い払ってください！' },
-            { n: '', t: '（寄り道：丘の石の広場で、オーガが宝箱を守っているらしい）' }],
+            { n: '', t: '（寄り道：丘の北の「オーガのねぐら」で、オーガが宝箱を守っているらしい）' }],
     bossLine: 'ぷるぷる……ここはワシらの丘だぁ！',
     outro: [{ n: '村人', t: 'ありがとう、スライムたちもおとなしくなりました！' },
             { n: '', t: '草原の北の「迷いの森」への柵がひらいた！' }] },
-  2: { title: '迷いの森', place: '森',
-    intro: [{ n: '旅商人', t: '迷路のようなこの森のいちばん奥に、ゴブリンキングがいるぞ。' },
-            { n: '', t: '（寄り道：行き止まりのどこかで、マスクオークが宝箱を守っている……）' }],
+  2: { title: '迷いの森', place: 'ゴブリンの巣',
+    intro: [{ n: '', t: '迷いの森を抜けた先は、ゴブリンたちの巣だった！' }],
     bossLine: 'ギギッ！ ここまで来るとは、生意気なやつらめ！',
     outro: [{ n: '旅商人', t: '見て、ひだまり町のほうから煙が上がっている！' },
             { n: '', t: '草原の東の「ひだまり町」への柵がひらいた！' }] },
@@ -353,20 +352,20 @@ const CH = {
             { n: '', t: '草原の南の「墓地」への柵がひらいた！ 町の人たちとも話してみよう' }] },
   4: { title: 'さまよう墓地', place: '墓地',
     intro: [{ n: '墓守', t: 'ガイコツ大将が、魔王城の地図を持っておるそうじゃ。' },
-            { n: '', t: '（寄り道：墓地のはずれで、ゾンビ巨人が宝箱を守っている……）' }],
+            { n: '', t: '（寄り道：南の「墓地の奥」で、ゾンビ巨人が宝箱を守っている……）' }],
     bossLine: 'カタカタ……地図は渡さぬぞ……',
     outro: [{ n: '', t: 'ガイコツ大将から、魔王城の地図を手に入れた！' },
             { n: '', t: '魔王城へは「もりかげ村の古井戸」から地下道で行けるらしい！' }] },
   5: { title: '北の魔王城', place: '魔王城',
     intro: [{ n: '北の魔王', t: 'よく来たな、小さき者どもよ。ここがお前たちの墓場だ！' },
-            { n: '', t: '（寄り道：城の片すみで、オーク呪術師が宝箱を守っている……）' }],
+            { n: '', t: '（寄り道：北の「魔王城の地下」で、オーク呪術師が宝箱を守っている……）' }],
     bossLine: 'ゆくぞ！ わが力を思い知れ！',
     outro: [{ n: '北の魔王', t: 'ば、ばかな……この私が……！' },
             { n: '', t: '北の魔王を倒した！ 光る門からお城へ帰ろう！' }] },
 };
 const KING_NEXT = {                // where to go next, and whom to beat there
   1: '草原の北の「スライムの丘」に行って、キングスライムを倒してくれ。',
-  2: '草原の北の「迷いの森」に行って、ゴブリンキングを倒してくれ。',
+  2: '草原の北の「迷いの森」を抜けて、ゴブリンキングを倒してくれ。',
   3: '草原の東の「ひだまり町」に行って、オーク隊長を倒してくれ。',
   4: '草原の南の「墓地」に行って、ガイコツ大将を倒してくれ。',
   5: 'もりかげ村の古井戸から魔王城に行って、北の魔王を倒してくれ。',
@@ -399,20 +398,28 @@ const LINKS = {
   castle: [['s', 'v1', 0]],           // (the castle builds its own door; listed so the 草原 guide arrow can find its way)
   v1: [['n', 'castle', 0], ['e', 'f1', 0]],
   f1: [['w', 'v1', 0], ['n', 'h1', 0, .2], ['n', 'f2', 1, .5], ['n', 'v2', 0, .8], ['e', 't1', 2], ['s', 'v3', 0, .3], ['s', 'f3', 3, .72]],
-  h1: [['s', 'f1', 0]],
-  f2: [['s', 'f1', 0]],
+  h1: [['s', 'f1', 0], ['n', 'h1m', 0]],
+  h1m: [['s', 'h1', 0]],
+  f2: [['s', 'f1', 0], ['n', 'f2b', 0, 14 / 57], ['n', 'f2m', 0, 44 / 57]],   // the maze: two ways out at the far end
+  f2b: [['s', 'f2', 0]],
+  f2m: [['s', 'f2', 0]],
   v2: [['s', 'f1', 0]],
   t1: [['w', 'f1', 0]],
   v3: [['n', 'f1', 0]],
-  f3: [['n', 'f1', 0]],
-  f4: [['s', 'v2', 0]],              // the demon castle: only through the old well in もりかげ村
+  f3: [['n', 'f1', 0], ['s', 'f3m', 0]],
+  f3m: [['n', 'f3', 0]],
+  f4: [['s', 'v2', 0], ['n', 'f4m', 0]],   // the demon castle: only through the old well in もりかげ村
+  f4m: [['s', 'f4', 0]],
 };
-const AREA_KIND = { f1: 'hub', f2: 'maze' };                 // others: waves then a boss
-const AREA_PLACES = ['f1', 'h1', 'f2', 't1', 'f3', 'f4'];
-const CH_PLACE = { 1: 'h1', 2: 'f2', 3: 't1', 4: 'f3', 5: 'f4' };
-const FIELD_CH = { h1: 1, f2: 2, t1: 3, f3: 4, f4: 5 };
+// kinds of places: hub = a few weak monsters / maze = monsters keep coming / bossroom = straight to the boss /
+// mid = the mid-bosses guarding weapon chests / (none) = waves, then the boss
+const AREA_KIND = { f1: 'hub', f2: 'maze', f2b: 'bossroom', h1m: 'mid', f2m: 'mid', f3m: 'mid', f4m: 'mid' };
+const AREA_PLACES = ['f1', 'h1', 'h1m', 'f2', 'f2b', 'f2m', 't1', 'f3', 'f3m', 'f4', 'f4m'];
+const MID_CH = { h1m: 1, f2m: 2, f3m: 4, f4m: 5 };          // which chapter's mid-boss lives in each side room
+const CH_PLACE = { 1: 'h1', 2: 'f2b', 3: 't1', 4: 'f3', 5: 'f4' };
+const FIELD_CH = { h1: 1, f2b: 2, t1: 3, f3: 4, f4: 5 };
 const FIELD_BACK = { f1: 'castle', h1: 'castle', f2: 'castle', t1: 'castle', f3: 'castle', f4: 'castle' };   // wiped out anywhere: wake up in the castle
-const PLACE_NAME = { castle: 'お城', v1: 'はじまりの村', v2: 'もりかげ村', v3: 'はかもり村', f1: '草原', h1: 'スライムの丘', f2: '迷いの森', t1: 'ひだまり町', f3: '墓地', f4: '魔王城', island: '島' };
+const PLACE_NAME = { castle: 'お城', v1: 'はじまりの村', v2: 'もりかげ村', v3: 'はかもり村', f1: '草原', h1: 'スライムの丘', h1m: 'オーガのねぐら', f2: '迷いの森', f2b: 'ゴブリンの巣', f2m: '森の奥の広場', t1: 'ひだまり町', f3m: '墓地の奥', f4m: '魔王城の地下', f3: '墓地', f4: '魔王城', island: '島' };
 // villagers: tile position + what they say (with a little help for the adventure)
 const NPC_DEFS = {                 // every villager says one sentence
   castle: [
@@ -423,29 +430,29 @@ const NPC_DEFS = {                 // every villager says one sentence
   ],
   v1: [
     { k: 'doc', n: '村長', tx: 8, ty: 8, lines: ['東の橋をわたると、草原じゃよ。'] },
-    { k: 'elf_f', n: 'ミナ', tx: 23, ty: 8, lines: ['丘の石の広場で眠っているオーガを倒すと、刀か投げ斧の宝箱がもらえるんだって！'] },
+    { k: 'elf_f', n: 'ミナ', tx: 23, ty: 8, lines: ['丘の北のオーガのねぐらでオーガを倒すと、刀か投げ斧の宝箱がもらえるんだって！'] },
     { k: 'knight_m', n: '見張りの兵士', tx: 18, ty: 14, lines: ['キングスライムが飛び上がったら、地面の赤い丸から逃げるんだ。'] },
     { k: 'dwarf_m', n: '商人', tx: 27, ty: 14, lines: ['ケーキはライフが1つ回復、メロンソーダは10秒間足が速くなるよ。'] },
     { k: 'elf_m', n: '少年', tx: 8, ty: 14, lines: ['最初のナイフは目の前しか届かないから、敵にぐっと近づいて切るんだよ。'] },
   ],
   v2: [
     { k: 'dwarf_f', n: '木こり', tx: 8, ty: 8, lines: ['ゴブリンキングが赤い線を出したら、横にずれて突進をよけろ！'] },
-    { k: 'elf_m', n: '狩人', tx: 23, ty: 8, lines: ['迷いの森の行き止まりで、マスクオークが弓か赤い杖の宝箱を守っているらしい。'] },
+    { k: 'elf_m', n: '狩人', tx: 23, ty: 8, lines: ['迷いの森の右上の出口の先で、マスクオークが弓か赤い杖の宝箱を守っているらしい。'] },
     { k: 'dwarf_m', n: '森番', tx: 29, ty: 8, lines: ['迷いの森の行き止まりには、ケーキやメロンソーダの入った宝箱も落ちているぞ。'] },
     { k: 'wizzard_f', n: 'おばあさん', tx: 18, ty: 14, lines: ['その古井戸は、昔どこか遠くへ続いていたそうだよ。'] },
     { k: 'knight_m', n: '旅の剣士', tx: 27, ty: 14, lines: ['オーク隊長のたいまつで地面が赤く光ったら、すぐに離れろ！'] },
-    { k: 'elf_f', n: '木の実売り', tx: 13, ty: 14, lines: ['迷いの森では敵がどんどんわくから、立ち止まらずに奥を目指してね。'] },
+    { k: 'elf_f', n: '木の実売り', tx: 13, ty: 14, lines: ['迷いの森の左上の出口を抜けると、ゴブリンの巣があるんだって。'] },
   ],
   t1: [   // hiding in their houses until the town is saved
     { k: 'doc', n: '町長', tx: 14, ty: 8, hide: true, lines: ['町を救ってくれて、本当にありがとう！'] },
-    { k: 'dwarf_m', n: '鍛冶屋', tx: 20, ty: 8, hide: true, lines: ['墓地のゾンビ巨人の宝箱には、大ハンマーか緑の杖が入っているそうだ。'] },
+    { k: 'dwarf_m', n: '鍛冶屋', tx: 20, ty: 8, hide: true, lines: ['墓地の奥のゾンビ巨人の宝箱には、大ハンマーか緑の杖が入っているそうだ。'] },
     { k: 'elf_f', n: '宿屋の娘', tx: 9, ty: 14, hide: true, lines: ['魔王城の場所は、ガイコツ大将を倒せばわかるっておじいちゃんが言ってたよ。'] },
     { k: 'knight_f', n: '町の衛兵', tx: 24, ty: 14, hide: true, lines: ['オークどもめ、また来たら追い返してやる！'] },
   ],
   v3: [
     { k: 'doc', n: '墓守', tx: 8, ty: 8, lines: ['ガイコツ大将のうずまき状の骨は、弾のすき間から近づくんじゃ。'] },
     { k: 'knight_f', n: '僧侶', tx: 23, ty: 8, lines: ['緑の杖の弾は、敵を追いかけてくれますよ。'] },
-    { k: 'knight_m', n: '墓地の番人', tx: 29, ty: 8, lines: ['魔王城のオーク呪術師の宝箱は、何が出るかわからないらしい。'] },
+    { k: 'knight_m', n: '墓地の番人', tx: 29, ty: 8, lines: ['魔王城の地下のオーク呪術師の宝箱は、何が出るかわからないらしい。'] },
     { k: 'lizard_m', n: '旅のトカゲ族', tx: 18, ty: 14, lines: ['魔王は体力が半分になると怒って、弾が倍になるぞ。'] },
     { k: 'wizzard_f', n: '旅の魔法使い', tx: 8, ty: 14, lines: ['魔王がふっと消えたら、すぐ近くに現れるから気をつけて。'] },
     { k: 'elf_f', n: '子ども', tx: 27, ty: 14, lines: ['魔王城への行き方は、ガイコツ大将を倒すとわかるんだって！'] },
@@ -783,7 +790,7 @@ function hitEnemy(e, by, dmg, shotId, keep) {
   if (T.mid && !e.aggro) wakeMids(e);
   if (e.hp <= 0) {
     enemies.delete(e.id); if (st) st.ko++;
-    if (T.mid) { spawnPickup('chest', e.x, e.y, { ch: FIELD_CH[SC] || 4 }); if (SC === curScene) toast(slotName(by) + 'が' + T.name + 'を倒した！ 宝箱が出た！'); }
+    if (T.mid) { spawnPickup('chest', e.x, e.y, { ch: MID_CH[SC] || FIELD_CH[SC] || LAST_CH }); if (SC === curScene) toast(slotName(by) + 'が' + T.name + 'を倒した！ 宝箱が出た！'); }
     else if (e.boss && mode === 'story') { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropItem('food', e.x, e.y); }
     else if (e.boss) { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
     else if (mode === 'story') {                  // story: small enemies never drop weapons
@@ -1374,7 +1381,7 @@ function creditClear(sc, A, ch, inside, now) {   // plan A: everybody here gets 
   }
 }
 function wipeOut(sc, A, inside, now) {   // wiped out: wake up in the village before this place
-  const back = FIELD_BACK[sc];
+  const back = FIELD_BACK[sc] || 'castle';
   for (const [sl, st] of inside) {
     st.down = false; st.downUntil = 0; st.life = LIFE_MAX; st.invUntil = now + 1500; st.sc = back; st.scLock = now + 2000;
     const o = otherBySlot(sl); if (o) o.sc = back;
@@ -1391,48 +1398,38 @@ function stepArea(sc, A, ch, inside, now) {
   if (!['idle', 'done'].includes(A.phase) && !alive.length) { A.phase = 'over'; A.until = now + 4000; A.queue = []; clearPlace(sc, true); return; }
   if (kind !== 'waves')                           // no waves to wait for: a downed player gets up after a while
     for (const [, st] of inside) if (st.down && st.downUntil > now + 60000) st.downUntil = now + 8000;
-  if (kind === 'hub') {                           // 草原: no boss, just a few weak monsters wandering around
-    if (A.phase === 'idle') { A.phase = 'hub'; A.inst++; A.nextSpawn = now + 2500; }
+  if (kind === 'hub' || kind === 'maze') {        // 草原: a few weak monsters / 迷いの森: they keep coming
+    if (A.phase === 'idle') {
+      A.phase = kind; A.inst++; A.nextSpawn = now + (kind === 'maze' ? 1500 : 2500);
+      for (const c of CHEST_SPOTS) spawnPickup('tchest', c.x, c.y);
+    }
     const lv = Math.max(0, ...inside.map(([, st]) => st.cleared || 0));
-    const types = lv >= 2 ? [0, 1, 1] : lv >= 1 ? [0, 0, 1] : [0];
-    if (now >= A.nextSpawn) { A.nextSpawn = now + 3500; if (enemiesIn(sc) < 2 + inside.length) spawnEnemy(types[Math.random() * types.length | 0], 1); }
+    const types = kind === 'maze' ? [0, 1, 1] : lv >= 2 ? [0, 1, 1] : lv >= 1 ? [0, 0, 1] : [0];
+    if (now >= A.nextSpawn) {
+      A.nextSpawn = now + (kind === 'maze' ? 2200 : 3500);
+      if (mainLeft(sc) < (kind === 'maze' ? 3 : 2) + inside.length) spawnEnemy(types[Math.random() * types.length | 0], 1);
+    }
+    return;
+  }
+  if (kind === 'mid') {                           // the side room: one sleeping mid-boss per visitor, each drops a weapon chest
+    if (A.phase === 'idle') { A.phase = 'mid'; A.inst++; A.visitors = new Set(); }
+    for (const [sl] of inside) if (!A.visitors.has(sl)) { A.visitors.add(sl); spawnMids(MID_CH[sc], 1, A.visitors.size - 1); }
     return;
   }
   if (A.phase === 'idle') {
-    A.inst++; A.waveIdx = 0; A.queue = []; A.bossName = ''; A.visitors = new Set(); A.nextSpawn = now + 1500;
+    A.inst++; A.waveIdx = 0; A.queue = []; A.bossName = ''; A.visitors = new Set();
     A.peaceful = !inside.some(fresh);                // everyone here has beaten it already: no attack, just passing through
-    if (A.peaceful) A.phase = 'done'; else if (kind === 'maze') A.phase = 'maze'; else { A.phase = 'intro'; A.until = now + 6000; }
-    for (const c of CHEST_SPOTS) spawnPickup('tchest', c.x, c.y);
+    if (A.peaceful) A.phase = 'done'; else { A.phase = 'intro'; A.until = now + (kind === 'bossroom' ? 4000 : 6000); }
   }
-  if (A.phase === 'done' && A.peaceful && inside.some(fresh)) {   // a newcomer: the enemies come back
-    A.peaceful = false; if (kind === 'maze') A.phase = 'maze'; else { A.phase = 'intro'; A.until = now + 6000; }
-  }
-  for (const [sl] of inside) if (!A.visitors.has(sl)) { A.visitors.add(sl); if (A.phase !== 'done' || A.peaceful) spawnMids(ch, 1, A.visitors.size - 1); }   // one mid-boss per visitor
-  if (kind === 'maze') {                          // 迷いの森: monsters keep coming; the boss waits in the clearing at the far end
-    if (A.phase === 'maze') {
-      if (now >= A.nextSpawn) {
-        A.nextSpawn = now + 2200;
-        const types = CH_WAVES[ch].flat();
-        if (mainLeft(sc) < 3 + inside.length) spawnEnemy(types[Math.random() * types.length | 0], 1);
-      }
-      if (ARENA && alive.some(([sl]) => { const p = playerTargets().find(q => q.slot === sl); return p && p.x > ARENA.x0 && p.x < ARENA.x1 && p.y > ARENA.y0 && p.y < ARENA.y1; })) {
-        const bt = CH_BOSS[ch];
-        spawnEnemy(bt, 1 + 0.5 * (inside.length - 1), true, ch, { x: ARENA.cx, y: ARENA.y0 + 40 });
-        A.phase = 'boss'; A.bossName = BOSS_NAMES[bt];
-      }
-    } else if (A.phase === 'boss' && ![...enemies.values()].some(e => e.sc === sc && e.boss)) {
-      for (const e of [...enemies.values()]) if (e.sc === sc && !ENEMY_TYPES[e.type].mid) enemies.delete(e.id);   // the rest run away
-      creditClear(sc, A, ch, inside, now);
-    } else if (A.phase === 'done' && !alive.length) reviveAll(now);
-    return;
-  }
-  if (A.phase === 'intro' && now >= A.until) startWaveA(A, ch, inside.length, now);
+  if (A.phase === 'done' && A.peaceful && inside.some(fresh)) { A.peaceful = false; A.phase = 'intro'; A.until = now + 4000; }   // a newcomer: the enemies come back
+  const spawnBoss = () => { const bt = CH_BOSS[ch]; spawnEnemy(bt, 1 + 0.5 * (inside.length - 1), true, ch, kind === 'bossroom' ? { x: WORLD_W / 2, y: WORLD_H / 2 - 5 * TILE } : null); A.phase = 'boss'; A.bossName = BOSS_NAMES[bt]; };
+  if (A.phase === 'intro' && now >= A.until) { if (kind === 'bossroom') spawnBoss(); else startWaveA(A, ch, inside.length, now); }
   else if (A.phase === 'fight') {
     if (A.queue.length && now >= A.nextSpawn && enemiesIn(sc) < MAX_ALIVE) { const q = A.queue.shift(); spawnEnemy(q.type, q.mult); A.nextSpawn = now + 600; }
     if (!A.queue.length && !mainLeft(sc)) {
       reviveAll(now);
       if (A.waveIdx < CH_WAVES[ch].length) { A.phase = 'rest'; A.until = now + 3000; }
-      else { const bt = CH_BOSS[ch]; spawnEnemy(bt, 1 + 0.5 * (inside.length - 1), true, ch); A.phase = 'boss'; A.bossName = BOSS_NAMES[bt]; }
+      else spawnBoss();
     }
   } else if (A.phase === 'rest' && now >= A.until) startWaveA(A, ch, inside.length, now);
   else if (A.phase === 'boss' && !mainLeft(sc)) creditClear(sc, A, ch, inside, now);
@@ -1452,7 +1449,7 @@ function onWarp(d) {
 function gameOutFor(sc) {             // what one player needs to know about the place they are in
   if (mode !== 'story') return { ...gameOut(), sc: 'island' };
   const ch = FIELD_CH[sc] || 0, A = ch ? areaOf(sc) : null;
-  return { m: 'story', sc, ch, ph: A ? A.phase : AREA_KIND[sc] === 'hub' ? 'hub' : 'safe', w: A ? A.waveIdx : 0, nw: ch ? CH_WAVES[ch].length : 0, left: A ? A.queue.length + mainLeft(sc) : 0, bn: A ? A.bossName : '' };
+  return { m: 'story', sc, ch, ph: A ? A.phase : AREA_KIND[sc] || 'safe', w: A ? A.waveIdx : 0, nw: ch ? CH_WAVES[ch].length : 0, left: A ? A.queue.length + mainLeft(sc) : 0, bn: A ? A.bossName : '' };
 }
 function gameOut() {
   if (mode !== 'coop') return { m: 'pvp' };
@@ -1481,7 +1478,7 @@ function storyUI(g) {
   if (g.sc !== curScene) return;                     // old news from before we walked on
   const C = CH[g.ch], place = PLACE_NAME[g.sc] || '', goal = storyGoal();
   const chip = (!g.ch ? 'ストーリー　' + place : 'ストーリー　第' + g.ch + '章 ' + place +
-    (g.ph === 'fight' ? '　WAVE ' + g.w + '/' + g.nw + '　残り ' + g.left : g.ph === 'maze' ? '　奥へ進め！' : g.ph === 'boss' ? '　ボス戦：' + g.bn : g.ph === 'done' ? '　クリア！' : '')) +
+    (g.ph === 'fight' ? '　WAVE ' + g.w + '/' + g.nw + '　残り ' + g.left : g.ph === 'boss' ? '　ボス戦：' + g.bn : g.ph === 'done' ? '　クリア！' : '')) +
     (goal === 'castle' ? '　▶ 王様に話しかけよう' : goal && goal !== g.sc ? '　▶ 次の目的地：' + PLACE_NAME[goal] : '');
   if ($('mode-chip').textContent !== chip) $('mode-chip').textContent = chip;
   storyPh = g.ph; storyCh = g.ch;
@@ -1494,16 +1491,17 @@ function storyUI(g) {
       banner(place, 1800);
       if (g.sc === 'castle' && !save.talked) toast('王様に近づいて「はなす」を押してみよう');
       else if (g.sc[0] === 'v') toast('村の人に話しかけると、冒険のヒントが聞けるかも');
+      else if (AREA_KIND[g.sc] === 'maze') toast('迷路だ！ 敵がどんどんわいてくる。奥の出口を目指そう');
+      else if (AREA_KIND[g.sc] === 'mid') toast('中ボスが宝箱を守って眠っている。近づくと目を覚ますぞ');
     }
     return;
   }
   if (arrived) {
     banner('第' + g.ch + '章<small>' + C.title + (g.ph === 'done' ? '（クリア済み）' : '') + '</small>', 3000);
-    if (g.ph === 'idle' || g.ph === 'intro' || g.ph === 'maze') say(C.intro);
+    if (g.ph === 'idle' || g.ph === 'intro') say(C.intro);
     if (g.ph === 'done') return;
   }
   if (g.ph === 'intro') banner('第' + g.ch + '章<small>敵がやってくる！</small>', 2500);
-  else if (g.ph === 'maze') banner('迷いの森<small>奥へ進め！ 敵がわいてくる</small>', 2500);
   else if (g.ph === 'fight') banner('WAVE ' + g.w + ' / ' + g.nw, 1500);
   else if (g.ph === 'rest') banner('WAVE ' + g.w + ' クリア！<small>次の敵が来る……</small>', 2500);
   else if (g.ph === 'boss' && C) { banner('ボス出現！<small>' + g.bn + '</small>', 2500); say([{ n: g.bn, t: C.bossLine }]); }
@@ -1704,7 +1702,7 @@ function doInteract() {
   } else say(talkTo.lines.map(t => ({ n: talkTo.n, t })));
 }
 let talkTo = null, exitCool = 0, lockMsgAt = 0;
-function fightPlace() { return !!FIELD_CH[curScene] || AREA_KIND[curScene] === 'hub'; }
+function fightPlace() { return !!FIELD_CH[curScene] || !!AREA_KIND[curScene]; }
 function safePlace() { return !fightPlace() || (SCENES[curScene].village && storyPh === 'done'); }   // a saved town is safe again
 // the guide: which place to head for next (shown in the top chip everywhere), and which exit the yellow arrow on 草原 points to
 function storyGoal() { return !save.talked ? 'castle' : save.cleared >= LAST_CH ? '' : CH_PLACE[save.cleared + 1]; }
@@ -1873,10 +1871,15 @@ const SCENES = {
   v3: { village: true, w: 46, h: 30, seed: 503, theme: 'village', houses: [[4, 3], [10, 3], [19, 3], [25, 3], [5, 15], [12, 15], [22, 15]] },
   t1: { village: true, town: true, w: 46, h: 30, seed: 504, theme: 'village', houses: [[3, 3], [8, 3], [17, 3], [22, 3], [27, 3], [3, 15], [11, 15], [17, 15], [22, 15], [27, 15]] },
   f1: { w: 60, h: 44, seed: 1001, oseed: 1002, theme: 'grass',  fth: .72, pT: .2,  pTl: .015, pR: .03 },
-  h1: { w: 56, h: 42, seed: 1101, oseed: 1102, theme: 'grass',  fth: .68, pT: .26, pTl: .02,  pR: .03,  lair: true },
+  h1: { w: 56, h: 42, seed: 1101, oseed: 1102, theme: 'grass',  fth: .68, pT: .26, pTl: .02,  pR: .03 },
+  h1m: { w: 38, h: 30, seed: 1201, oseed: 1202, theme: 'grass', fth: .66, pT: .3, pTl: .04, pR: .04, lair: true, lairCenter: true },
   f2: { w: 57, h: 42, seed: 2201, oseed: 2202, theme: 'forest', maze: true },
-  f3: { w: 56, h: 42, seed: 3301, oseed: 3302, theme: 'grave',  fth: .6,  pT: .14, pTl: .03,  pR: .07,  lair: true },
-  f4: { w: 56, h: 42, seed: 4401, oseed: 4402, theme: 'demon',  fth: .62, pT: .12, pTl: .015, pR: .05,  lair: true },
+  f2b: { w: 42, h: 32, seed: 2401, oseed: 2402, theme: 'forest', fth: .55, pT: .22, pTl: .05, pR: .02 },
+  f2m: { w: 38, h: 30, seed: 2301, oseed: 2302, theme: 'forest', fth: .5, pT: .32, pTl: .08, pR: .02, lair: true, lairCenter: true },
+  f3m: { w: 38, h: 30, seed: 3401, oseed: 3402, theme: 'grave', fth: .6, pT: .16, pTl: .04, pR: .08, lair: true, lairCenter: true },
+  f4m: { w: 38, h: 30, seed: 4501, oseed: 4502, theme: 'demon', fth: .62, pT: .14, pTl: .02, pR: .06, lair: true, lairCenter: true },
+  f3: { w: 56, h: 42, seed: 3301, oseed: 3302, theme: 'grave',  fth: .6,  pT: .14, pTl: .03,  pR: .07 },
+  f4: { w: 56, h: 42, seed: 4401, oseed: 4402, theme: 'demon',  fth: .62, pT: .12, pTl: .015, pR: .05 },
 };
 let curScene = '', THEME = THEMES.grass, LAIR = null, KING = null, DOOR = null, PORTAL = null;
 let SC = 'island', EXITS = [], ENTS = {}, NPCS = [], HOUSES = [], WELL = null, ARENA = null, CHEST_SPOTS = [];   // SC = the place being drawn or simulated right now
@@ -1993,7 +1996,7 @@ function buildWorld(sc, paint) {
       const d = Math.hypot(x - MAP_W / 2, y - MAP_H / 2);
       if (d >= 14 && d <= 20 && reach[y][x] && !beach[y][x] && Math.abs(y - (MAP_H / 2 | 0)) > 4) cand.push([x, y]);
     }
-    const [lx, ly] = cand.length ? cand[r2() * cand.length | 0] : [MAP_W / 2 + 15 | 0, MAP_H / 2 - 8 | 0];
+    const [lx, ly] = S.lairCenter ? [MAP_W / 2 | 0, (MAP_H / 2 | 0) - 2] : cand.length ? cand[r2() * cand.length | 0] : [MAP_W / 2 + 15 | 0, MAP_H / 2 - 8 | 0];
     for (let y = ly - 3; y <= ly + 3; y++) for (let x = lx - 3; x <= lx + 3; x++) if (y >= 0 && x >= 0 && y < MAP_H && x < MAP_W && Math.hypot(x - lx, y - ly) <= 3.2) obst[y][x] = 0;
     LAIR = { x: lx * TILE + 8, y: ly * TILE + 10 };
     flood();
@@ -2074,13 +2077,8 @@ function buildMaze(rnd) {             // 迷いの森: corridors 3 tiles wide be
     open(Math.min(X(i), X(a)), Math.min(Y(j), Y(b)), Math.max(X(i), X(a)) + 2, Math.max(Y(j), Y(b)) + 2);
     stack.push([a, b]);
   }
-  // the boss clearing: the middle three cells of the top two rows
-  const a0 = ei - 1, a1 = ei + 1;
-  open(X(a0), Y(0), X(a1) + 2, Y(1) + 2);
-  ARENA = { x0: X(a0) * TILE, y0: Y(0) * TILE, x1: (X(a1) + 3) * TILE, y1: (Y(1) + 3) * TILE };
-  ARENA.cx = (ARENA.x0 + ARENA.x1) / 2; ARENA.cy = (ARENA.y0 + ARENA.y1) / 2;
-  PORTAL = { x: ARENA.cx, y: ARENA.cy + 10 };
-  // the mid-boss sleeps in the dead end farthest from the way in
+  const a0 = -1, a1 = -1;            // (no clearing inside: the boss and the mid-boss are in rooms past the two far exits)
+  PORTAL = null;
   const dist = []; for (let j = 0; j < R; j++) dist.push(new Array(C).fill(-1));
   const q = [[ei, ej]]; dist[ej][ei] = 0;
   const linked = (i, j, a, b) => obst[(Y(j) + Y(b)) / 2 + 1 | 0][(X(i) + X(a)) / 2 + 1 | 0] === 0;
@@ -2088,15 +2086,10 @@ function buildMaze(rnd) {             // 迷いの森: corridors 3 tiles wide be
     const [i, j] = q.shift();
     for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) if (a >= 0 && b >= 0 && a < C && b < R && dist[b][a] < 0 && linked(i, j, a, b)) { dist[b][a] = dist[j][i] + 1; q.push([a, b]); }
   }
-  let best = null;
-  for (let j = 0; j < R; j++) for (let i = 0; i < C; i++) {
-    if (deg[j][i] !== 1 || (j <= 1 && i >= a0 && i <= a1) || (i === ei && j === ej)) continue;
-    if (!best || dist[j][i] > dist[best[1]][best[0]]) best = [i, j];
-  }
-  if (best) LAIR = { x: (X(best[0]) + 1.5) * TILE, y: (Y(best[1]) + 1.5) * TILE + 4 };
+  const best = null;
   const ends = [];                     // the other dead ends get small treasure chests
   for (let j = 0; j < R; j++) for (let i = 0; i < C; i++)
-    if (deg[j][i] === 1 && !(j <= 1 && i >= a0 && i <= a1) && !(i === ei && j === ej) && !(best && i === best[0] && j === best[1])) ends.push([dist[j][i], i, j]);
+    if (deg[j][i] === 1 && !(i === ei && j === ej) && !(j === 0 && (i === 2 || i === 8))) ends.push([dist[j][i], i, j]);
   ends.sort((p, q) => q[0] - p[0]);
   CHEST_SPOTS = ends.slice(0, 5).map(([, i, j]) => ({ x: (X(i) + 1.5) * TILE, y: (Y(j) + 1.5) * TILE + 4 }));
   return [X(ei) + 1, Y(ej) + 1];
