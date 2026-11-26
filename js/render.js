@@ -118,9 +118,10 @@ function drawChar(c, x, y, dir, frame, slot, isMe, p = {}) {
   if (!blink && imgs[c] && imgs[c].complete) ctx.drawImage(imgs[c], (p.down ? 0 : frame) * FW, ROWS[p.down ? 'down' : dir] * FH, FW, FH, dx, dy, FW, FH);
   ctx.globalAlpha = 1;
   // life hearts above the tag
-  const lv = p.life === undefined ? LIFE_MAX : p.life;
-  for (let i = 0; i < LIFE_MAX; i++) {
-    const hx = dx + 1 + i * 6, hy = dy - 8;
+  const lv = p.life === undefined ? lifeMaxOf(p) : p.life;
+  const nH = lifeMaxOf(p);                       // 3 hearts, or more after finding いのちのハート (kept centred)
+  for (let i = 0; i < nH; i++) {
+    const hx = dx + 1 - (nH - 3) * 3 + i * 6, hy = dy - 8;
     ctx.fillStyle = i < lv ? '#e5484d' : 'rgba(30,30,30,.55)';
     HEART.forEach((row, r) => [...row].forEach((b, cc) => { if (b === '1') ctx.fillRect(hx + cc, hy + r, 1, 1); }));
   }
@@ -249,9 +250,9 @@ function frame(now) {
     const VD = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
     const list = [
       { c: me.c, x: me.x, y: me.y, dir: me.dir, f: me.m ? Math.floor(me.t) % 4 : 0, slot: me.slot, me: true, fast: now < me.fastUntil,
-        p: { life: me.life, down: me.down, inv: me.inv, atkT: me.atkT, ax: me.aimX, ay: me.aimY } },
+        p: { life: me.life, lm: me.lm, down: me.down, inv: me.inv, atkT: me.atkT, ax: me.aimX, ay: me.aimY } },
       ...[...others.values()].filter(o => (o.sc || 'island') === curScene).map(o => ({ c: o.c, x: o.dx, y: o.dy, dir: o.dir, f: o.m ? Math.floor(o.t) % 4 : 0, slot: o.slot, me: false, fast: (o.fs | 0) > 0,
-        p: { life: o.life, down: o.down, inv: o.inv, atkT: o.atkT, ax: (VD[o.dir] || [0, 1])[0], ay: (VD[o.dir] || [0, 1])[1] } })),
+        p: { life: o.life, lm: o.lm, down: o.down, inv: o.inv, atkT: o.atkT, ax: (VD[o.dir] || [0, 1])[0], ay: (VD[o.dir] || [0, 1])[1] } })),
     ].sort((a, b) => a.y - b.y);
     // shots: shadow on the ground, shot at chest height
     for (const sh of shots.values()) {

@@ -355,7 +355,7 @@ function stepWaves(now) {        // host, co-op only
       reviveAll(now);
     } else if (game.phase === 'boss' && !enemies.size) {
       game.phase = 'clear'; game.until = now + 5000;
-      for (const st of stats.values()) if (!st.down) st.life = Math.min(LIFE_MAX, st.life + 1);   // small heal between waves
+      for (const st of stats.values()) if (!st.down) st.life = Math.min(lifeMaxOf(st), st.life + 1);   // small heal between waves
       reviveAll(now);
       spawnWaveRewards();
     }
@@ -364,7 +364,7 @@ function stepWaves(now) {        // host, co-op only
   } else if ((game.phase === 'over' || game.phase === 'win') && now >= game.until) {
     // start a new run from WAVE 1
     reviveAll(now); game.wave = 1; game.phase = 'rest'; game.until = now + 3000; game.startAt = now; pickups.clear();
-    for (const st of stats.values()) { st.ko = 0; st.weapon = 'knife'; st.ammo = 0; st.life = LIFE_MAX; }
+    for (const st of stats.values()) { st.ko = 0; st.weapon = 'knife'; st.ammo = 0; st.life = lifeMaxOf(st); }
   }
 }
 // その場所の敵の数

@@ -63,7 +63,7 @@ function renderSaveInfo() {
     let armed = 0;
     b.addEventListener('click', () => {
       if (!armed) { armed = setTimeout(() => { armed = 0; b.textContent = '記録を消す'; }, 4000); b.textContent = '本当に消す？（もう一度押す）'; return; }
-      clearTimeout(armed); save = { v: 2, cleared: 0, weapons: [], talked: false, chests: [] }; writeSave();
+      clearTimeout(armed); save = { v: 2, cleared: 0, weapons: [], talked: false, chests: [], hearts: 0 }; writeSave();
     });
     el.append(b);
   }
@@ -81,7 +81,7 @@ function createRoom(tries, m) {
     loadScene(m === 'story' ? 'castle' : 'island');
     const sp = spawnPoint(1); me.x = sp.x; me.y = sp.y;
     stats.get(1).sc = curScene;
-    if (m === 'story') { const st = stats.get(1); st.cleared = save.cleared; st.owned = new Set(['knife', ...save.weapons]); st.chests = new Set(save.chests); }
+    if (m === 'story') { const st = stats.get(1); st.cleared = save.cleared; st.owned = new Set(['knife', ...save.weapons]); st.chests = new Set(save.chests); st.lm = LIFE_MAX + Math.max(0, Math.min(3, save.hearts | 0)); st.life = st.lm; }
     resetGame();
     p.on('connection', onHostConnection);
     enterPlay();
@@ -104,7 +104,7 @@ function joinRoom() {
   let giveUp = 0, slowMsg = 0;
   p.on('open', () => {
     lobbyMsg('部屋の親につないでいます…');
-    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION, sv: { c: save.cleared, w: save.weapons, k: save.chests } } });
+    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION, sv: { c: save.cleared, w: save.weapons, k: save.chests, h: save.hearts | 0 } } });
     slowMsg = setTimeout(() => { if (!hostConn) lobbyMsg('部屋の親につないでいます…（時間がかかっています。親の画面が開いたままか確認してください）'); }, 8000);
     giveUp = setTimeout(() => {
       if (hostConn) return;
@@ -168,7 +168,7 @@ function endRoom(msg) {
   conns.clear(); others = new Map(); me.held.clear(); target = null; stick = null; ptr = null;
   shots.clear(); sparks = []; stats.clear(); atkHeld = false;
   enemies = new Map(); bossFx = []; game.queue = []; game.phase = 'wait'; lastUI = ''; banner(''); $('mode-chip').textContent = '';
-  Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0, fastUntil: 0 });
+  Object.assign(me, { life: LIFE_MAX, lm: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0, fastUntil: 0 });
   fx = []; pickups.clear();
   dlgQueue = []; if (dlgTyping) clearInterval(dlgTyping); dlgTyping = 0; clearTimeout(dlgAuto); dlgOpen = false; $('dialog').hidden = true; $('swap').hidden = true;
   storyPh = ''; renderSaveInfo(); $('bossbar').hidden = true; lastBossKey = '';
@@ -202,15 +202,15 @@ $('copy').addEventListener('click', () => {
 });
 // 左上の参加者一覧（ライフ・撃破数・居場所）
 function renderList() {
-  const all = [{ slot: me.slot, c: me.c, you: true, life: me.life, down: me.down, ko: me.ko }, ...[...others.values()]].sort((a, b) => a.slot - b.slot);
+  const all = [{ slot: me.slot, c: me.c, you: true, life: me.life, lm: me.lm, down: me.down, ko: me.ko }, ...[...others.values()]].sort((a, b) => a.slot - b.slot);
   $('count').textContent = all.length + ' / ' + MAX;
   $('plist').replaceChildren(...all.map(p => {
     const li = document.createElement('li');
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = SLOT_COLORS[p.slot - 1];
     const life = document.createElement('span');
-    const lv = p.life === undefined ? LIFE_MAX : p.life;
+    const lv = p.life === undefined ? lifeMaxOf(p) : p.life;
     life.className = 'life' + (p.down ? ' down' : '');
-    life.textContent = p.down ? 'ダウン' : '♥'.repeat(lv) + '♡'.repeat(Math.max(0, LIFE_MAX - lv));
+    life.textContent = p.down ? 'ダウン' : '♥'.repeat(lv) + '♡'.repeat(Math.max(0, lifeMaxOf(p) - lv));
     const wk = p.you ? me.w : p.w;
     const where = mode === 'story' ? '［' + (PLACE_NAME[p.you ? curScene : p.sc] || '') + '］' : '';
     li.append(dot, 'P' + p.slot + '　' + (NAMES[p.c] || '？') + (p.you ? '（あなた）' : '') + (p.slot === 1 ? '・親' : '') + where + '　', life, '　撃破 ' + (p.ko | 0) + (wk && wk !== 'knife' ? '　' + WEAPONS[wk].name : ''));

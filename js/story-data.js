@@ -57,9 +57,9 @@ const SAVE_KEY = 'dotwalk_story_v1';
 function loadSave() {
   try {
     const v = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (v && typeof v === 'object') return { v: 2, cleared: Math.max(0, Math.min(LAST_CH, v.v === 2 ? v.cleared | 0 : [0, 1, 2, 4, 5][Math.min(4, v.cleared | 0)])), weapons: (Array.isArray(v.weapons) ? v.weapons : []).filter((w, i, a) => PICK_WEAPONS.includes(w) && a.indexOf(w) === i), talked: !!v.talked, chests: (Array.isArray(v.chests) ? v.chests : []).filter(k => typeof k === 'string').slice(0, 200) };
+    if (v && typeof v === 'object') return { v: 2, cleared: Math.max(0, Math.min(LAST_CH, v.v === 2 ? v.cleared | 0 : [0, 1, 2, 4, 5][Math.min(4, v.cleared | 0)])), weapons: (Array.isArray(v.weapons) ? v.weapons : []).filter((w, i, a) => PICK_WEAPONS.includes(w) && a.indexOf(w) === i), talked: !!v.talked, chests: (Array.isArray(v.chests) ? v.chests : []).filter(k => typeof k === 'string').slice(0, 200), hearts: Math.max(0, Math.min(3, v.hearts | 0)) };
   } catch (e) {}
-  return { v: 2, cleared: 0, weapons: [], talked: false, chests: [] };
+  return { v: 2, cleared: 0, weapons: [], talked: false, chests: [], hearts: 0 };
 }
 let save = loadSave();
 // ストーリーの記録を保存
@@ -110,7 +110,7 @@ const NPC_DEFS = {                 // every villager says one sentence
   v2: [
     { k: 'dwarf_f', n: '木こり', tx: 8, ty: 8, lines: ['ゴブリンキングが赤い線を出したら、横にずれて突進をよけろ！'] },
     { k: 'elf_m', n: '狩人', tx: 23, ty: 8, lines: ['迷いの森の右上の出口の先にいるマスクオークは、弓か赤い杖を落とすらしい。'] },
-    { k: 'dwarf_m', n: '森番', tx: 29, ty: 8, lines: ['迷いの森の行き止まりには、ケーキやメロンソーダの入った宝箱があるぞ。'] },
+    { k: 'dwarf_m', n: '森番', tx: 29, ty: 8, lines: ['迷いの森のいちばん奥の宝箱には、ライフの上限が増える「いのちのハート」が入っているらしいぞ。'] },
     { k: 'wizzard_f', n: 'おばあさん', tx: 18, ty: 14, lines: ['その古井戸は、昔どこか遠くへ続いていたそうだよ。'] },
     { k: 'knight_m', n: '旅の剣士', tx: 27, ty: 14, lines: ['オーク隊長のたいまつで地面が赤く光ったら、すぐに離れろ！'] },
     { k: 'elf_f', n: '木の実売り', tx: 13, ty: 14, lines: ['迷いの森の左上の出口を抜けると、ゴブリンの巣があるんだって。'] },

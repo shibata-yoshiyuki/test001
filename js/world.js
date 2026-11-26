@@ -257,6 +257,8 @@ function buildMaze(rnd) {             // 迷いの森: corridors 3 tiles wide be
   for (let band = 0; band < 3; band++) { const inBand = ends.filter(([, i]) => (i * 3 / C | 0) === band), far = inBand.slice(0, Math.max(1, Math.ceil(inBand.length / 2))); if (far.length) picks.push(far[rnd() * far.length | 0]); }   // somewhere in the farther half of each third
   for (const e of ends) if (picks.length < 3 && !picks.includes(e)) picks.push(e);
   CHEST_SPOTS = picks.map(([, i, j]) => ({ x: (X(i) + 1.5) * TILE, y: (Y(j) + 1.5) * TILE + 4 }));
+  const far = picks.reduce((b, p, k) => p[0] > picks[b][0] ? k : b, 0);
+  if (CHEST_SPOTS[far]) CHEST_SPOTS[far].heart = true;   // the farthest chest holds a heart (one more life)
   return [X(ei) + 1, Y(ej) + 1];
 }
 function buildVillage(sc, S, paint) {  // houses, a road, villagers; trees all around

@@ -16,6 +16,8 @@ const CODE_CHARS = '0123456789';
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, INV_MS = 1000, DOWN_MS = 3000;   // lives, invincible time after a hit, battle respawn wait
+// その人のライフの上限（ストーリーでは森のハートで増える）。p = 状態（lm を持つ）
+const lifeMaxOf = p => (p && p.lm) || LIFE_MAX;
 // 画面の部品をidで取る
 const $ = id => document.getElementById(id);
 const pickOne = a => a[Math.random() * a.length | 0];   // one item of an array, at random

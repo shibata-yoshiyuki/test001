@@ -44,7 +44,7 @@ function startWaveA(A, ch, n, now) {
 function creditClear(sc, A, ch, inside, now) {   // plan A: everybody here gets the clear
   A.phase = 'done'; A.peaceful = false; reviveAll(now);
   for (const [sl, st] of inside) {
-    if (!st.down) st.life = Math.min(LIFE_MAX, st.life + 1);
+    if (!st.down) st.life = Math.min(lifeMaxOf(st), st.life + 1);
     st.cleared = Math.max(st.cleared || 0, ch);
     const m = { t: 'sclear', ch }; if (!sendTo(sl, m)) onStoryClear(m);
   }
@@ -52,7 +52,7 @@ function creditClear(sc, A, ch, inside, now) {   // plan A: everybody here gets 
 function wipeOut(sc, A, inside, now) {   // wiped out: wake up in the village before this place
   const back = FIELD_BACK[sc] || 'castle';
   for (const [sl, st] of inside) {
-    st.down = false; st.downUntil = 0; st.life = LIFE_MAX; st.invUntil = now + 1500; st.sc = back; st.scLock = now + 2000;
+    st.down = false; st.downUntil = 0; st.life = lifeMaxOf(st); st.invUntil = now + 1500; st.sc = back; st.scLock = now + 2000;
     const o = otherBySlot(sl); if (o) o.sc = back;
     const m = { t: 'warp', sc: back, from: sc, msg: '全滅……気がつくと' + PLACE_NAME[back] + 'にいた' };
     if (!sendTo(sl, m)) setTimeout(() => onWarp(m), 0);
@@ -72,7 +72,7 @@ function stepArea(sc, A, ch, inside, now) {
       A.phase = kind; A.inst++; A.nextSpawn = now + (kind === 'maze' ? 1500 : 2500);
       CHEST_SPOTS.forEach((c, k) => {       // only chests that someone here has not opened yet
         const key = sc + ':' + k;
-        if (inside.some(([, st]) => !st.chests.has(key))) spawnPickup('tchest', c.x, c.y, { key });
+        if (inside.some(([, st]) => !st.chests.has(key))) spawnPickup('tchest', c.x, c.y, c.heart ? { key, heart: 1 } : { key });
       });
     }
     const lv = Math.max(0, ...inside.map(([, st]) => st.cleared || 0));
@@ -117,7 +117,7 @@ function onStoryClear(d) {
 // 全滅してお城に戻されたとき
 function onWarp(d) {
   goTo(d.sc, d.from);
-  me.down = false; me.life = LIFE_MAX;
+  me.down = false; me.life = lifeMaxOf(me);
   if (d.msg) setTimeout(() => toast(String(d.msg)), 400);
 }
 function gameOutFor(sc) {             // what one player needs to know about the place they are in

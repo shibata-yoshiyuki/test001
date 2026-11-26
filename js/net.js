@@ -21,6 +21,7 @@ function onHostConnection(conn) {
     const stt = freshStat(), sv = conn.metadata.sv || {};
     stt.cleared = Math.max(0, Math.min(LAST_CH, sv.c | 0));
     stt.owned = new Set(['knife', ...(Array.isArray(sv.w) ? sv.w.filter(w => PICK_WEAPONS.includes(w)) : [])]);
+    stt.lm = mode === 'story' ? LIFE_MAX + Math.max(0, Math.min(3, sv.h | 0)) : LIFE_MAX; stt.life = stt.lm;   // extra hearts from the forest
     stt.chests = new Set(Array.isArray(sv.k) ? sv.k.filter(k => typeof k === 'string').slice(0, 200) : []);
     stt.sc = startSc;
     stats.set(slot, stt);
@@ -58,7 +59,7 @@ function applyAll(ps) {
   const next = new Map();
   for (const p of ps) {
     if (p.slot === me.slot) {
-      if (p.life !== undefined) { me.life = p.life; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; if (WEAPONS[p.w]) { me.w = p.w; me.ammo = p.am | 0; } me.fastUntil = performance.now() + (p.fs | 0); }
+      if (p.life !== undefined) { me.life = p.life; me.lm = p.lm || LIFE_MAX; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; if (WEAPONS[p.w]) { me.w = p.w; me.ammo = p.am | 0; } me.fastUntil = performance.now() + (p.fs | 0); }
       continue;
     }
     const key = 's' + p.slot, prev = others.get(key);
@@ -71,7 +72,7 @@ function applyAll(ps) {
 // 自分の位置など（子→親に送る）
 function myState() { return { slot: me.slot, c: me.c, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, m: me.m, sc: curScene, ...(isHost ? statOut(me.slot) : {}) }; }
 // 親：1人分のライフ・武器などを送る形に
-function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, down: st.down, inv: now < st.invUntil, ko: st.ko, w: st.weapon, am: st.ammo, fs: Math.max(0, Math.round(st.fastUntil - now)) } : {}; }
+function statOut(slot) { const st = stats.get(slot), now = performance.now(); return st ? { life: st.life, lm: st.lm || LIFE_MAX, down: st.down, inv: now < st.invUntil, ko: st.ko, w: st.weapon, am: st.ammo, fs: Math.max(0, Math.round(st.fastUntil - now)) } : {}; }
 // story: news only goes to players in the same place as the action (SC)
 function broadcast(msg, exceptPeer) {
   const local = mode === 'story' && msg.t !== 'all';
@@ -113,14 +114,14 @@ function netTick() {
     for (const [slot, st] of stats) {            // revive downed players (near a living friend in the same place)
       if (!(st.down && now >= st.downUntil)) continue;
       withMap(st.sc || 'island', () => {
-        st.down = false; st.life = LIFE_MAX; st.invUntil = now + 1500;
+        st.down = false; st.life = lifeMaxOf(st); st.invUntil = now + 1500;
         let p = randomLandSpot();
         if (mode !== 'pvp') {
           const mates = alivePlayers().filter(q => q.slot !== slot);
           const m = pickOne(mates);
           if (m) for (let i = 0; i < 20; i++) { const x = m.x + (Math.random() - .5) * 60, y = m.y + (Math.random() - .5) * 40; if (canStand(x, y)) { p = { x, y }; break; } }
         }
-        const msg = { t: 'respawn', slot, x: p.x, y: p.y };
+        const msg = { t: 'respawn', slot, x: p.x, y: p.y, lm: lifeMaxOf(st) };
         broadcast(msg); onRespawn(msg);
       });
     }

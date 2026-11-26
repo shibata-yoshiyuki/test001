@@ -217,13 +217,19 @@ function stepPickups(now) {      // host
           if (st.chests.has(pk.key)) { if (!st.tHint) { st.tHint = true; sendNote(t.slot, 'この宝箱はもうあけました'); } continue; }
           st.chests.add(pk.key); st.tHint = false;
           pickups.delete(pk.id);
+          if (pk.heart) {                    // the heart chest: one more life, for good (saved by the opener)
+            st.lm = lifeMaxOf(st) + 1; st.life = st.lm;
+            const m = { t: 'pick', id: pk.id, slot: t.slot, w: 'tchest', item: 'heart', key: pk.key };
+            broadcast(m); if (SC === curScene) onPick(m); syncFromStats();
+            break;
+          }
           const item = Math.random() < .5 ? 'food' : 'drink';
           spawnPickup(item, pk.x, pk.y + 14);
           const m = { t: 'pick', id: pk.id, slot: t.slot, w: 'tchest', item, key: pk.key };
           broadcast(m); if (SC === curScene) onPick(m);
           break;
         }
-        if (pk.w === 'food') { if (st.life >= LIFE_MAX) continue; st.life++; }     // full life: leave the cake for someone else
+        if (pk.w === 'food') { if (st.life >= lifeMaxOf(st)) continue; st.life++; }     // full life: leave the cake for someone else
         else if (pk.w === 'drink') st.fastUntil = now + FAST_MS;
         else if (pk.keep) {                    // story: a mid-boss's weapon, kept forever (one per person per visit)
           const ckey = SC + ':' + areaOf(SC).inst;
@@ -245,6 +251,16 @@ function onPick(d) {
   pickups.delete(d.id);
   if (d.w === 'tchest') {
     sparks.push({ x: d.x || me.x, y: me.y - 14, t: performance.now(), col: '255, 215, 90' });
+    if (d.item === 'heart') {
+      if (d.slot === me.slot) {
+        banner('いのちのハート！<small>ライフの上限が1つ増えた（ずっと続きます）</small>', 3500);
+        save.hearts = (save.hearts | 0) + 1;
+        if (d.key && !save.chests.includes(d.key)) save.chests.push(String(d.key));
+        writeSave();
+      } else toast(slotName(d.slot) + 'が宝箱から「いのちのハート」を見つけた！');
+      refreshListIfChanged();
+      return;
+    }
     if (d.slot === me.slot) {
       toast('宝箱をあけた！ ' + (ITEMS[d.item] ? ITEMS[d.item].name : '') + 'が出てきた');
       if (d.key && !save.chests.includes(d.key)) { save.chests.push(String(d.key)); writeSave(); }
@@ -256,7 +272,7 @@ function onPick(d) {
     const p = d.slot === me.slot ? me : otherBySlot(d.slot);
     if (p) sparks.push({ x: p === me ? me.x : p.dx, y: (p === me ? me.y : p.dy) - 14, t: performance.now(), col: d.w === 'food' ? '255, 120, 140' : '120, 240, 140' });
     if (d.slot === me.slot) {
-      if (d.w === 'food') me.life = Math.min(LIFE_MAX, me.life + 1); else me.fastUntil = performance.now() + FAST_MS;
+      if (d.w === 'food') me.life = Math.min(lifeMaxOf(me), me.life + 1); else me.fastUntil = performance.now() + FAST_MS;
       toast(it.name + '：' + it.text);
     } else if (p && d.w === 'drink') p.fs = FAST_MS;
     refreshListIfChanged();
@@ -327,11 +343,11 @@ function onHit(d) {
 // 復活の表示
 function onRespawn(d) {
   if (d.slot === me.slot) {
-    me.x = d.x; me.y = d.y; me.down = false; me.life = LIFE_MAX; target = null;
+    me.x = d.x; me.y = d.y; me.down = false; me.life = d.lm || lifeMaxOf(me); target = null;
     toast('復活しました');
   } else {
     const o = otherBySlot(d.slot);
-    if (o) { o.x = o.dx = d.x; o.y = o.dy = d.y; o.down = false; o.life = LIFE_MAX; }
+    if (o) { o.x = o.dx = d.x; o.y = o.dy = d.y; o.down = false; o.life = d.lm || lifeMaxOf(o); }
   }
   refreshListIfChanged();
 }
