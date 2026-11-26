@@ -234,7 +234,7 @@ let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes w
 let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-26a';         // bump on every release; host and guests must match
+const VERSION = '2026-11-26b';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -267,14 +267,15 @@ const me = { c: 0, x: WORLD_W / 2, y: WORLD_H / 2, dir: 'down', m: false, t: 0, 
   life: LIFE_MAX, down: false, inv: false, ko: 0, aimX: 0, aimY: 1, lastShot: -1e9, atkT: -1e9, w: 'knife', ammo: 0, fastUntil: 0 };
 const shots = new Map();           // id -> shot  (x,y = point on the ground; drawn 12px higher)
 // weapons (icons: 0x72 DungeonTileset II, CC0). kind: melee = arc in front, slam = ring around you, shot = projectile
+// damage (dmg): the knife is 1. weapons that reach far or wide do 1 or less; close-in weapons do more (at most 3)
 const WEAPONS = {
   knife:  { name: 'ナイフ',     icon: 'knife',             kind: 'melee', reach: 30, arc: 0.9, cd: 350, dmg: 1 },
   bow:    { name: '弓',         icon: 'bow',               kind: 'shot', spd: 260, rng: 260, cd: 520, dmg: 1, pierce: true, proj: 'arrow' },
-  axe:    { name: '投げ斧',     icon: 'throwing_axe',      kind: 'shot', spd: 170, rng: 110, cd: 700, dmg: 2, pierce: true, boomerang: true, proj: 'axe' },
-  katana: { name: '刀',         icon: 'katana',            kind: 'melee', reach: 40, arc: 1.7, cd: 450, dmg: 2 },
-  hammer: { name: '大ハンマー', icon: 'big_hammer',        kind: 'slam', radius: 50, delay: 260, cd: 1000, dmg: 3 },
-  red:    { name: '赤い杖',     icon: 'red_magic_staff',   kind: 'shot', spd: 170, rng: 150, cd: 500, dmg: 1, spread: [-0.3, 0, 0.3], proj: 'orbR' },
-  green:  { name: '緑の杖',     icon: 'green_magic_staff', kind: 'shot', spd: 125, rng: 260, cd: 450, dmg: 1, homing: true, proj: 'orbG' },
+  axe:    { name: '投げ斧',     icon: 'throwing_axe',      kind: 'shot', spd: 170, rng: 110, cd: 700, dmg: 1, pierce: true, boomerang: true, proj: 'axe' },
+  katana: { name: '刀',         icon: 'katana',            kind: 'melee', reach: 40, arc: 1.7, cd: 450, dmg: 3 },
+  hammer: { name: '大ハンマー', icon: 'big_hammer',        kind: 'slam', radius: 50, delay: 260, cd: 1000, dmg: 2 },
+  red:    { name: '赤い杖',     icon: 'red_magic_staff',   kind: 'shot', spd: 170, rng: 150, cd: 500, dmg: 0.5, spread: [-0.3, 0, 0.3], proj: 'orbR' },
+  green:  { name: '緑の杖',     icon: 'green_magic_staff', kind: 'shot', spd: 125, rng: 260, cd: 450, dmg: 0.5, homing: true, proj: 'orbG' },
 };
 const PICK_WEAPONS = ['bow', 'axe', 'katana', 'hammer', 'red', 'green'];
 const WEAPON_USES = 20;
@@ -781,7 +782,7 @@ function resolveSlam(att, W) {
 }
 function hitEnemy(e, by, dmg, shotId, keep) {
   const T = ENEMY_TYPES[e.type];
-  e.hp -= dmg;
+  e.hp = Math.round((e.hp - dmg) * 100) / 100;      // half-damage weapons: keep the numbers tidy
   if (shotId && !keep) shots.delete(shotId);
   const st = stats.get(by);
   if (T.mid && !e.aggro) wakeMids(e);
@@ -953,7 +954,7 @@ function onPick(d) {
       me.w = d.w; me.ammo = 0;
       if (!save.weapons.includes(d.w)) save.weapons.push(d.w);
       writeSave();
-      banner(W.name + 'を手に入れた！<small>ずっと使える／「持ちかえ」かQキーで切りかえ</small>', 3500);
+      banner(W.name + 'を手に入れた！<small>威力 ' + W.dmg + '（ナイフは1）／ずっと使える／「持ちかえ」かQキーで切りかえ</small>', 3500);
     } else { const o = otherBySlot(d.slot); if (o) o.w = d.w; toast(slotName(d.slot) + 'が' + W.name + 'を手に入れた！'); }
     refreshListIfChanged();
     return;
