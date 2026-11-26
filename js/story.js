@@ -70,9 +70,9 @@ function stepArea(sc, A, ch, inside, now) {
   if (kind === 'hub' || kind === 'maze') {        // 草原: a few weak monsters / 迷いの森: they keep coming
     if (A.phase === 'idle') {
       A.phase = kind; A.inst++; A.nextSpawn = now + (kind === 'maze' ? 1500 : 2500);
-      CHEST_SPOTS.forEach((c, k) => {       // only chests that someone here has not opened yet
+      CHEST_SPOTS.forEach((c, k) => {       // a chest anyone has opened is gone for good (this room, and everyone's records)
         const key = sc + ':' + k;
-        if (inside.some(([, st]) => !st.chests.has(key))) spawnPickup('tchest', c.x, c.y, c.heart ? { key, heart: 1 } : { key });
+        if (!roomChests.has(key) && !inside.some(([, st]) => st.chests.has(key))) spawnPickup('tchest', c.x, c.y, c.heart ? { key, heart: 1 } : { key });
       });
     }
     const lv = Math.max(0, ...inside.map(([, st]) => st.cleared || 0));

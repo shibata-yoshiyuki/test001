@@ -27,6 +27,7 @@ function onHostConnection(conn) {
     stats.set(slot, stt);
     others.set(conn.peer, { ...st, dx: st.x, dy: st.y, t: 0 });
     conn.send({ t: 'welcome', slot, x: st.x, y: st.y, mode, sc: startSc });
+    for (const key of roomChests) { conn.send({ t: 'chestgone', key }); stt.chests.add(key); }   // chests already opened in this room
     toast('P' + slot + '（' + (NAMES[st.c] || '？') + '）が入りました');
     renderList();
   });

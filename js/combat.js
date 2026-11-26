@@ -184,6 +184,21 @@ function stepShots(dt, now) {
 }
 
 // ---- 落ちている物 ------------------------------------------------
+// 親：宝箱があけられた → この部屋では二度と出さず、部屋にいる全員の記録にも「あけた」と残す
+const roomChests = new Set();
+function chestGone(key) {
+  if (!key) return;
+  roomChests.add(key);
+  for (const st of stats.values()) st.chests.add(key);
+  const m = { t: 'chestgone', key };
+  for (const { conn } of conns.values()) if (conn.open) conn.send(m);
+  onChestGone(m);
+}
+// 宝箱がなくなったことを自分の記録に残す（全員のブラウザで動く）
+function onChestGone(d) {
+  const k = String(d.key || '');
+  if (k && mode === 'story' && !save.chests.includes(k)) { save.chests.push(k); writeSave(); }
+}
 // 地面に物を置く（武器・アイテム・宝箱）
 function spawnPickup(w, x, y, extra) {
   const here = [...pickups.values()].filter(p => p.sc === SC);   // at most 10 things on the ground per place; chests and kept weapons stay
@@ -213,10 +228,9 @@ function stepPickups(now) {      // host
       if (Math.abs(t.x - pk.x) < 11 && Math.abs(t.y - pk.y) < 9) {
         const st = stats.get(t.slot);
         let w = pk.w, chest = 0;
-        if (pk.w === 'tchest') {             // a small treasure chest: a cake or a melon soda pops out (once per player, ever)
-          if (st.chests.has(pk.key)) { if (!st.tHint) { st.tHint = true; sendNote(t.slot, 'この宝箱はもうあけました'); } continue; }
-          st.chests.add(pk.key); st.tHint = false;
+        if (pk.w === 'tchest') {             // a treasure chest: whoever opens it first gets it, then it is gone for everyone
           pickups.delete(pk.id);
+          chestGone(pk.key);
           if (pk.heart) {                    // the heart chest: one more life, for good (saved by the opener)
             st.lm = lifeMaxOf(st) + 1; st.life = st.lm;
             const m = { t: 'pick', id: pk.id, slot: t.slot, w: 'tchest', item: 'heart', key: pk.key };

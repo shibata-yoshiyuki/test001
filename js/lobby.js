@@ -78,6 +78,7 @@ function createRoom(tries, m) {
     stats.clear(); stats.set(1, freshStat());
     mode = m;
     for (const k in AREAS) delete AREAS[k];
+    roomChests.clear();
     loadScene(m === 'story' ? 'castle' : 'island');
     const sp = spawnPoint(1); me.x = sp.x; me.y = sp.y;
     stats.get(1).sc = curScene;
@@ -138,6 +139,7 @@ function joinRoom() {
       else if (d.t === 'sclear') onStoryClear(d);
       else if (d.t === 'note') toast(String(d.text));
       else if (d.t === 'warp') onWarp(d);
+      else if (d.t === 'chestgone') onChestGone(d);
     });
     conn.on('close', () => { if (hostConn === conn) endRoom('親が部屋を閉じたため、部屋が終了しました。'); });
   });
