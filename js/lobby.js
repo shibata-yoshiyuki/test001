@@ -171,7 +171,7 @@ function endRoom(msg) {
   Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0, fastUntil: 0 });
   fx = []; pickups.clear();
   dlgQueue = []; if (dlgTyping) clearInterval(dlgTyping); dlgTyping = 0; clearTimeout(dlgAuto); dlgOpen = false; $('dialog').hidden = true; $('swap').hidden = true;
-  storyPh = ''; renderSaveInfo();
+  storyPh = ''; renderSaveInfo(); $('bossbar').hidden = true; lastBossKey = '';
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   document.body.style.overflow = '';

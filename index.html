@@ -96,6 +96,17 @@ button.chip { cursor: pointer; }
 .banner:empty { display: none; }
 .banner.fade { opacity: 0; }
 .banner small { display: block; font-size: .5em; white-space: normal; max-width: 92vw; margin: 0 auto; }
+/* a boss (not a mid-boss) appearing: red banner with a BOSS tag, and its life bar at the top */
+.banner.boss { color: #ffb3bd; font-size: 2.9rem; }
+.banner .boss-tag { display: block; font-size: .42em; letter-spacing: .4em; color: #ff4d6d; }
+.bossbar {
+  position: absolute; left: 50%; top: calc(92px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+  width: min(70vw, 440px); pointer-events: none; text-align: center; padding: 4px 8px 6px; background: rgba(12, 8, 14, .7);
+  font: .85rem var(--display); color: #ffd0d6; text-shadow: 0 2px 0 #000;
+}
+.bossbar .bb { height: 10px; margin-top: 3px; background: rgba(0,0,0,.65); border: 2px solid #5a1622; }
+.bossbar .bb div { height: 100%; background: #ff4d6d; transition: width .2s; }
+.bossbar.rage .bb div { background: #ff2a2a; }
 #mode-chip { font-weight: 400; color: #ffd98a; }
 .atk {
   position: absolute; z-index: 2; width: 84px; height: 84px; border-radius: 50%;
@@ -181,6 +192,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   </div>
   <p class="toast" id="play-msg" role="status"></p>
   <p class="banner" id="banner" aria-live="polite"></p>
+  <div class="bossbar" id="bossbar" hidden><span id="boss-name"></span><div class="bb"><div id="boss-hp"></div></div></div>
   <button class="atk" id="atk" aria-label="攻撃（スペースキー）"><span id="atk-name">ナイフ</span><small id="atk-ammo"></small></button>
   <button class="chip swap" id="swap" hidden aria-label="武器を持ちかえる（Qキー）">持ちかえ</button>
   <div class="dialog" id="dialog" hidden role="dialog" aria-live="polite">
@@ -200,7 +212,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
 // The game's code lives in js/*.js, one file per topic (see README「プログラムの構成」).
-const VERSION = '2026-11-26e';         // bump on every release; host and guests must match (also refreshes the js files)
+const VERSION = '2026-11-26f';         // bump on every release; host and guests must match (also refreshes the js files)
 const FILES = ['core', 'data', 'story-data', 'world', 'lobby', 'net', 'combat', 'enemies', 'story', 'input', 'render', 'main'];   // load order matters
 for (const f of FILES) document.write('<script src="js/' + f + '.js?v=' + VERSION + '"><\/script>');
 </script>

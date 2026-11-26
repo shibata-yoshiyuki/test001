@@ -55,7 +55,7 @@ let bossFx = [];                  // quake rings / teleport puffs (everyone)
 let enemies = new Map();           // id -> {id, type, x, y, hp, maxHp, face, ...}  (host: authoritative, guest: interpolated copy)
 let enemySeq = 0;
 const game = { wave: 0, phase: 'wait', until: 0, queue: [], nextSpawn: 0, banner: '' };
-let lastUI = '', lastWeaponKey = '';
+let lastUI = '', lastWeaponKey = '', lastBossKey = '';
 // 部屋の親が持つ、プレイヤー1人分の状態（ライフ・武器・クリア記録など）の初期値
 const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9, fastUntil: 0, cleared: 0, owned: new Set(['knife']), chests: new Set() });
 let screen = 'select';
@@ -76,11 +76,13 @@ function slotName(slot) {
 // ---- 画面のお知らせ ----------------------------------------------
 let bannerTimer = 0;
 // 画面まんなかの大きな文字（WAVE・章のタイトルなど）
-function banner(html, ms) {
-  const el = $('banner'); el.innerHTML = html; el.classList.remove('fade');
+function banner(html, ms, cls) {
+  const el = $('banner'); el.innerHTML = html; el.className = 'banner' + (cls ? ' ' + cls : '');
   clearTimeout(bannerTimer);
   if (ms) bannerTimer = setTimeout(() => { el.classList.add('fade'); setTimeout(() => { if (el.classList.contains('fade')) el.innerHTML = ''; }, 500); }, ms);
 }
+// ボス（中ボスではない）が出たとき：赤い「BOSS」表示
+function bossBanner(name) { banner('<span class="boss-tag">BOSS</span>' + name + '<small>ボスが現れた！</small>', 3200, 'boss'); }
 let toastTimer = 0;
 // 画面上の小さなお知らせ（数秒で消える）
 function toast(text) {

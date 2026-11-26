@@ -162,7 +162,7 @@ function storyUI(g) {
   if (g.ph === 'intro') banner('第' + g.ch + '章<small>敵がやってくる！</small>', 2500);
   else if (g.ph === 'fight') banner('WAVE ' + g.w + ' / ' + g.nw, 1500);
   else if (g.ph === 'rest') banner('WAVE ' + g.w + ' クリア！<small>次の敵が来る……</small>', 2500);
-  else if (g.ph === 'boss' && C) { banner('ボス出現！<small>' + g.bn + '</small>', 2500); say([{ n: g.bn, t: C.bossLine }]); }
+  else if (g.ph === 'boss' && C) { bossBanner(g.bn); say([{ n: g.bn, t: C.bossLine }]); }
   else if (g.ph === 'done' && C) { banner('第' + g.ch + '章 クリア！', 4000); say(C.outro); }
   else if (g.ph === 'over') banner('全滅……', 3500);
 }
@@ -179,7 +179,7 @@ function updateGameUI(g) {
   lastUI = key;
   if (g.ph === 'rest') banner('WAVE ' + g.w + '<small>' + (g.t || 1) + '秒後に開始</small>');
   else if (g.ph === 'fight') banner('WAVE ' + g.w + '<small>スタート！</small>', 1500);
-  else if (g.ph === 'boss') banner('ボス出現！<small>' + g.bn + '</small>', 2500);
+  else if (g.ph === 'boss') bossBanner(g.bn);
   else if (g.ph === 'clear') banner('WAVE ' + g.w + ' クリア！<small>倒れた仲間が復活／ライフ＋1／武器が落ちた！</small>', 4000);
   else if (g.ph === 'over') banner('全滅…<small>WAVE ' + g.w + ' まで到達。もう一度 WAVE 1 から</small>', 5500);
   else if (g.ph === 'win') banner('ゲームクリア！<small>' + (g.bn || '魔王') + 'をやっつけた！<br>' + (g.res || '') + '<br>15秒後に WAVE 1 からもう一度</small>', 14000);
