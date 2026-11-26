@@ -15,7 +15,7 @@ function clearPlace(sc, keepMids) {
   for (const e of [...enemies.values()]) if (e.sc === sc && (!keepMids || !ENEMY_TYPES[e.type].mid)) enemies.delete(e.id);
   for (const [id, sh] of [...shots]) if (sh.sc === sc && sh.slot === 0) shots.delete(id);
 }
-// 1つの場所を1回分進める。種類（AREA_KIND）ごとに：草原=弱い敵が少し / 迷路=敵がわき続ける / 中ボス部屋 / ボス部屋 / それ以外=WAVE→ボス
+// 1つの場所を1回分進める。種類（AREA_KIND）ごとに：草原=弱い敵が少し / 迷路=敵がわき続ける / 武器の番人の部屋 / ボス部屋 / それ以外=WAVE→ボス
 function stepAreas(now) {             // host, story
   for (const sc of AREA_PLACES) {
     const A = areaOf(sc);
@@ -150,7 +150,7 @@ function storyUI(g) {
       if (g.sc === 'castle' && !save.talked) toast('王様に近づいて「はなす」を押してみよう');
       else if (g.sc[0] === 'v') toast('村の人に話しかけると、冒険のヒントが聞けるかも');
       else if (AREA_KIND[g.sc] === 'maze') toast('迷路だ！ 敵がどんどんわいてくる。奥の出口を目指そう');
-      else if (AREA_KIND[g.sc] === 'mid') toast('中ボスが眠っている。近づくと目を覚ますぞ');
+      else if (AREA_KIND[g.sc] === 'mid') toast('武器の番人が眠っている。近づくと目を覚ますぞ（倒さなくても先へ進めます）');
     }
     return;
   }
@@ -223,7 +223,7 @@ function doInteract() {
 
 // ---- 移動と案内（矢印） ------------------------------------------
 let talkTo = null, exitCool = 0, lockMsgAt = 0;
-// 戦う場所か（章の場所・草原・迷路・中ボス部屋）
+// 戦う場所か（章の場所・草原・迷路・武器の番人の部屋）
 function fightPlace() { return !!FIELD_CH[curScene] || !!AREA_KIND[curScene]; }
 function safePlace() { return !fightPlace() || (SCENES[curScene].village && storyPh === 'done'); }   // a saved town is safe again
 // the guide: which place to head for next (shown in the top chip everywhere), and which exit the yellow arrow on 草原 points to
@@ -283,7 +283,7 @@ function ownedWeapons() { return ['knife', ...save.weapons]; }
 // 「持ちかえ」：持っている武器を順番に切りかえ
 function cycleWeapon() {
   if (mode !== 'story' || safePlace()) return;
-  const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。ダンジョンの先にいる中ボスを倒そう'); return; }
+  const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。ダンジョンの先にいる武器の番人を倒そう'); return; }
   const w = list[(list.indexOf(me.w) + 1) % list.length];
   me.w = w;
   if (isHost) { const st = stats.get(me.slot); if (st && st.owned.has(w)) st.weapon = w; syncFromStats(); }

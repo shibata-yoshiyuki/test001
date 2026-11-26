@@ -1,5 +1,5 @@
 // ================================================================================================
-// js/enemies.js — 敵・中ボス・ボスの動き、協力モードのウェーブ
+// js/enemies.js — 敵・武器の番人・ボスの動き、協力モードのウェーブ
 // enemy spawning and moving, mid-bosses that sleep until you come near, each boss's attack pattern,
 // and the co-op wave mode
 // (loaded 8/12: may use anything from the files loaded before it)
@@ -60,11 +60,11 @@ function sendBossFx(k, x, y) { const m = { t: 'bfx', k, x: Math.round(x), y: Mat
 function onBossFx(d) {
   bossFx.push({ k: d.k, x: d.x, y: d.y, t: performance.now() });
   if (d.k === 'rage') toast('魔王が怒った！ 攻撃が激しくなる！');
-  if (d.k === 'wake') toast('中ボスが目を覚ました！ 倒すと武器を落とす');
+  if (d.k === 'wake') toast('武器の番人が目を覚ました！ 倒すと武器を落とす');
 }
 
-// ---- 中ボス ------------------------------------------------------
-// 中ボスが目を覚ます
+// ---- 武器の番人 ------------------------------------------------------
+// 武器の番人が目を覚ます
 function wakeMids(src) {
   let woke = false;
   for (const o of enemies.values()) if (o.sc === SC && ENEMY_TYPES[o.type].mid && !o.aggro) { o.aggro = true; woke = true; }
@@ -79,7 +79,7 @@ function spawnMids(ch, n, start) {     // one mid-boss per visitor, around the s
     enemies.set(e.id, e);
   }
 }
-// 中ボスの動き（ねぐらから離れすぎない）
+// 武器の番人の動き（ねぐらから離れすぎない）
 function midStep(e, T, dt, now, tgt, best, ux, uy, ps) {
   if (!e.aggro) { if (tgt && best < 120) wakeMids(e); return { stop: true }; }
   e.stT = (e.stT || 0) - dt;
@@ -369,7 +369,7 @@ function stepWaves(now) {        // host, co-op only
 }
 // その場所の敵の数
 function enemiesIn(sc) { let n = 0; for (const e of enemies.values()) if (e.sc === sc) n++; return n; }
-// その場所の、中ボス以外の敵の数
+// その場所の、武器の番人以外の敵の数
 function mainLeft(sc) { let n = 0; for (const e of enemies.values()) if (e.sc === (sc || SC) && !ENEMY_TYPES[e.type].mid) n++; return n; }
 // 協力モードの進み具合（親→子）
 function gameOut() {

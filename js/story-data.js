@@ -96,7 +96,7 @@ const PLACE_NAME = { castle: 'お城', v1: 'はじまりの村', v2: 'もりか�
 const NPC_DEFS = {                 // every villager says one sentence
   castle: [
     { k: 'doc', n: '大臣', tx: 17, ty: 7, lines: ['草原から丘・森・町・墓地へ道がつながっていて、草原では黄色い矢印が次の行き先を指しておりますぞ。'] },
-    { k: 'knight_f', n: '近衛兵', tx: 8, ty: 8, lines: ['中ボスは強い武器を落とすが、拾えるのはひとつの場所で1人1つまでだ。'] },
+    { k: 'knight_f', n: '近衛兵', tx: 8, ty: 8, lines: ['武器の番人は強い武器を落とすが、拾えるのはひとつの場所で1人1つまでだ。'] },
     { k: 'knight_m', n: 'お城の兵士', tx: 9, ty: 15, lines: ['この下の門を出ると、はじまりの村だ。'] },
     { k: 'elf_f', n: '侍女', tx: 18, ty: 15, lines: ['ボスを倒すと、次の場所への柵がひらくそうですよ。'] },
   ],

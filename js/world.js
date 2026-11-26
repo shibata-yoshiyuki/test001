@@ -76,7 +76,7 @@ function addExits(sc, carve, bridge, short) {   // exits on the map edge toward 
     ENTS[to] = ent;
   }
 }
-// マップを作る：海に囲まれた島（ふち・木・岩）、出口への道と石の橋、中ボスの広場。paint=true で絵も描く
+// マップを作る：海に囲まれた島（ふち・木・岩）、出口への道と石の橋、武器の番人の広場。paint=true で絵も描く
 function buildWorld(sc, paint) {
   const S = SCENES[sc];
   SC = sc; THEME = THEMES[S.theme];

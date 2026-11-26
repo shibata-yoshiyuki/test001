@@ -81,7 +81,7 @@ function banner(html, ms, cls) {
   clearTimeout(bannerTimer);
   if (ms) bannerTimer = setTimeout(() => { el.classList.add('fade'); setTimeout(() => { if (el.classList.contains('fade')) el.innerHTML = ''; }, 500); }, ms);
 }
-// ボス（中ボスではない）が出たとき：赤い「BOSS」表示
+// ボス（武器の番人ではない）が出たとき：赤い「BOSS」表示
 function bossBanner(name) { banner('<span class="boss-tag">BOSS</span>' + name + '<small>ボスが現れた！</small>', 3200, 'boss'); }
 let toastTimer = 0;
 // 画面上の小さなお知らせ（数秒で消える）

@@ -91,7 +91,7 @@ function resolveSlam(att, W) {
     for (const t of playerTargets()) if (t.slot !== att.slot && Math.hypot(t.x - cx, t.y - 12 - cy) <= W.radius + 6) damagePlayer(t.slot, t.x - cx, t.y - cy, att.slot, '', now, true);
   }
 }
-// 敵にダメージ（倒れたら撃破数・落とし物・中ボスの武器）
+// 敵にダメージ（倒れたら撃破数・落とし物・武器の番人の武器）
 function hitEnemy(e, by, dmg, shotId, keep) {
   const T = ENEMY_TYPES[e.type];
   e.hp = Math.round((e.hp - dmg) * 100) / 100;      // half-damage weapons: keep the numbers tidy

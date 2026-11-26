@@ -98,7 +98,7 @@ function drawEnemy(e, x, y, now) {
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 4);
     ctx.fillStyle = e.boss ? '#ff4d6d' : T.mid ? '#ff9f43' : '#f2c14e'; ctx.fillRect(bx, by, Math.max(0, Math.round(bw * e.hp / e.maxHp)), 2);
     if (e.boss || T.mid) {               // a tag so a boss and a mid-boss are never mixed up
-      const tag = e.boss ? 'BOSS' : '中ボス';
+      const tag = e.boss ? 'BOSS' : '番人';
       ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = '#000'; ctx.fillText(tag, Math.round(x) + 1, by - 2);
       ctx.fillStyle = e.boss ? '#ff6b7f' : '#ffb366'; ctx.fillText(tag, Math.round(x), by - 3);
@@ -374,13 +374,14 @@ function frame(now) {
       const kind = FIELD_CH[ex.to] ? 'boss' : AREA_KIND[ex.to] === 'mid' ? 'mid' : '';   // a boss's place / a mid-boss room get a marked sign
       drawables.push({ y: sy, draw: () => {
         const name = PLACE_NAME[ex.to] || '', locked = ex.need && save.cleared < ex.need;
-        ctx.font = 'bold 8px sans-serif'; const tw = Math.max(34, Math.ceil((ctx.measureText(name) || {}).width || name.length * 8) + 6);
+        ctx.font = 'bold 8px sans-serif'; const label = kind === 'boss' ? '⚠ BOSS' : kind === 'mid' ? '武器の番人' : '', wOf = t => Math.ceil((ctx.measureText(t) || {}).width || t.length * 8);
+        const tw = Math.max(34, wOf(name) + 6, label ? wOf(label) + 6 : 0);
         const top = kind ? 10 : 0;                       // marked signs have a second row on top
         ctx.fillStyle = '#5a3d22'; ctx.fillRect(sx - 1, sy - 12, 2, 12);
         ctx.fillStyle = kind === 'boss' ? '#5a1622' : kind === 'mid' ? '#6b3b12' : '#4a321d'; ctx.fillRect(sx - tw / 2 - 1, sy - 24 - top, tw + 2, 13 + top);
         if (kind) {
           ctx.fillStyle = locked ? '#7d6a6a' : kind === 'boss' ? '#c8323f' : '#e07b24'; ctx.fillRect(sx - tw / 2, sy - 23 - top, tw, 10);
-          ctx.fillStyle = '#fff3c4'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(kind === 'boss' ? '⚠ BOSS' : '中ボス', sx, sy - 18 - top);
+          ctx.fillStyle = '#fff3c4'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, sx, sy - 18 - top);
         }
         ctx.fillStyle = locked ? '#9a8a76' : '#e2c48e'; ctx.fillRect(sx - tw / 2, sy - 23, tw, 11);
         ctx.fillStyle = locked ? '#5d5246' : '#3b2614'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(name, sx, sy - 17);
