@@ -200,7 +200,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
 // The game's code lives in js/*.js, one file per topic (see README「プログラムの構成」).
-const VERSION = '2026-11-26d';         // bump on every release; host and guests must match (also refreshes the js files)
+const VERSION = '2026-11-26e';         // bump on every release; host and guests must match (also refreshes the js files)
 const FILES = ['core', 'data', 'story-data', 'world', 'lobby', 'net', 'combat', 'enemies', 'story', 'input', 'render', 'main'];   // load order matters
 for (const f of FILES) document.write('<script src="js/' + f + '.js?v=' + VERSION + '"><\/script>');
 </script>

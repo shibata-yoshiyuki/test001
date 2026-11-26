@@ -115,6 +115,15 @@ function spawnMinion(type, near, lv) {
 function ringShots(e, n, spd, off) { for (let a = 0; a < n; a++) { const r = (a + (off || 0)) / n * Math.PI * 2; enemyShot(e, Math.cos(r), Math.sin(r), spd, 230); } }
 
 // ---- ボス --------------------------------------------------------
+// ボスが地面に投げた物（たいまつ・隕石）：赤い丸の予告から1秒後にはじけてダメージ
+function stepBombs(e, ps, now) {
+  if (!e.bombs || !e.bombs.length) return;
+  for (const b of e.bombs) if (now >= b.t) {
+    sendBossFx('boom', b.x, b.y);
+    for (const p of ps) if (Math.hypot(p.x - b.x, (p.y - b.y) * 1.4) < 26) damagePlayer(p.slot, p.x - b.x, p.y - b.y, 0, '', now);
+  }
+  e.bombs = e.bombs.filter(b => now < b.t);
+}
 // each boss has its own moves. act: 0 walk, 1 wind-up (warning), 2 attack, 3 recover. Returns how to move this frame.
 function bossStep(e, T, dt, now, tgt, best, ux, uy, ps) {
   e.stT = (e.stT || 0) - dt;
@@ -176,27 +185,57 @@ function bossStep(e, T, dt, now, tgt, best, ux, uy, ps) {
     if (tgt && e.cd <= 0 && best < 240) { e.act = 1; e.stT = 0.5; }
     return { vx: ux, vy: uy, spd: 16 };
   }
-  if (T.key === 'big_demon') {                   // 魔王: ring, 5-way fan, teleport; enraged under half life
-    if (rage && !e.rage) { e.rage = true; sendBossFx('rage', e.x, e.y); }
-    if (e.act === 1) {                           // fading out before a teleport
+  if (T.key === 'big_demon') {                   // 北の魔王: 6 moves in turn, faster bullets; enraged under half life
+    if (rage && !e.rage) { e.rage = true; e.cd = Math.min(e.cd, .6); sendBossFx('rage', e.x, e.y); }
+    stepBombs(e, ps, now);
+    if (e.burst > 0) {                           // aimed volley: quick shots straight at someone
+      e.burstT = (e.burstT || 0) - dt;
+      if (e.burstT <= 0 && tgt) { e.burst--; e.burstT = .14; const b = Math.atan2(uy, ux); enemyShot(e, Math.cos(b), Math.sin(b), rage ? 210 : 180, 280); }
+    }
+    if (e.act === 1) {                           // fading out before a teleport, then a ring where it lands
       if (e.stT <= 0) {
         const p = pickOne(ps);
         if (p) for (let i = 0; i < 16; i++) {
           const a = Math.random() * Math.PI * 2, spot = standableNear(p.x + Math.cos(a) * 80, p.y + Math.sin(a) * 56, 10);
           if (spot) { sendBossFx('tele', e.x, e.y); e.x = spot.x; e.y = spot.y; sendBossFx('tele', e.x, e.y); break; }
         }
-        e.act = 0; ringShots(e, rage ? 12 : 8, 65);
+        e.act = 0; ringShots(e, rage ? 14 : 10, 95);
+        if (rage) e.burst = 3;
       }
       return { stop: true, noContact: true };
     }
+    if (e.act === 2) {                           // spiral: arms of bullets turning around it
+      e.spT = (e.spT || 0) - dt;
+      if (e.spT <= 0) {
+        e.spT = .09; e.spA = (e.spA || 0) + .32;
+        const arms = rage ? 4 : 3;
+        for (let k = 0; k < arms; k++) { const r = e.spA + k / arms * Math.PI * 2; enemyShot(e, Math.cos(r), Math.sin(r), rage ? 110 : 95, 240); }
+      }
+      if (e.stT <= 0) e.act = 0;
+      return { stop: true };
+    }
     e.cd -= dt;
     if (tgt && e.cd <= 0) {
-      e.cd = rage ? 1.7 : 2.6; e.pat = ((e.pat || 0) + 1) % 3;
-      if (e.pat === 0) { ringShots(e, 16, 70); if (rage) ringShots(e, 16, 52, .5); }
-      else if (e.pat === 1) { const b = Math.atan2(uy, ux); for (const da of [-.4, -.2, 0, .2, .4]) enemyShot(e, Math.cos(b + da), Math.sin(b + da), rage ? 120 : 100, 240); }
-      else { e.act = 1; e.stT = 0.8; }
+      e.cd = rage ? 1.3 : 2.0; e.pat = ((e.pat || 0) + 1) % 6;
+      const b = Math.atan2(uy, ux);
+      if (e.pat === 0) { ringShots(e, 18, 95); if (rage) ringShots(e, 18, 75, .5); }                    // double ring
+      else if (e.pat === 1) { const fan = rage ? [-.5, -.3, -.15, 0, .15, .3, .5] : [-.4, -.2, 0, .2, .4]; for (const da of fan) enemyShot(e, Math.cos(b + da), Math.sin(b + da), rage ? 170 : 145, 260); }   // fan at you
+      else if (e.pat === 2) { e.act = 2; e.stT = rage ? 2.0 : 1.6; e.spT = 0; }                          // spiral
+      else if (e.pat === 3) {                                                                              // meteors where you stand
+        e.bombs = e.bombs || [];
+        for (const p of ps) for (let i = 0; i < (rage ? 3 : 2); i++) {
+          const x = p.x + (i ? (Math.random() - .5) * 90 : 0), y = p.y + (i ? (Math.random() - .5) * 60 : 0);
+          e.bombs.push({ x, y, t: now + 1000 }); sendBossFx('mark', x, y);
+        }
+      }
+      else if (e.pat === 4) e.burst = rage ? 7 : 5;                                                        // aimed volley
+      else { e.act = 1; e.stT = 0.7; }                                                                     // teleport
+      if (rage && e.pat !== 4 && e.pat !== 5) {                                                            // angry: calls help now and then
+        e.sumT = (e.sumT || 0) - 1;
+        if (e.sumT <= 0 && [...enemies.values()].filter(o => o.sc === SC && !o.boss).length < 4) { e.sumT = 4; sendBossFx('summon', e.x, e.y); spawnMinion(3, e, e.lv); spawnMinion(2, e, e.lv); }
+      }
     }
-    return { vx: ux, vy: uy, spd: rage ? 24 : 17 };
+    return { vx: ux, vy: uy, spd: rage ? 30 : 20 };
   }
   if (T.key === 'orc_warrior') {                 // オーク隊長: torches that burst where you stand, calls soldiers
     e.sumT = (e.sumT === undefined ? 4 : e.sumT) - dt;
@@ -204,13 +243,7 @@ function bossStep(e, T, dt, now, tgt, best, ux, uy, ps) {
       e.sumT = 10;
       if ([...enemies.values()].filter(o => o.sc === SC && !o.boss).length < 5) { sendBossFx('summon', e.x, e.y); spawnMinion(9, e, e.lv); spawnMinion(9, e, e.lv); }
     }
-    if (e.bombs && e.bombs.length) {
-      for (const b of e.bombs) if (now >= b.t) {
-        sendBossFx('boom', b.x, b.y);
-        for (const p of ps) if (Math.hypot(p.x - b.x, (p.y - b.y) * 1.4) < 26) damagePlayer(p.slot, p.x - b.x, p.y - b.y, 0, '', now);
-      }
-      e.bombs = e.bombs.filter(b => now < b.t);
-    }
+    stepBombs(e, ps, now);
     if (e.act === 1) {
       if (e.stT <= 0) {
         e.act = 0; e.bombs = e.bombs || [];

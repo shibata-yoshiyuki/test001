@@ -52,7 +52,7 @@ const MAX_ALIVE = 24, ENEMY_BULLET = '#b45cff';
 // every wave ends with one boss: that wave's enemy, made big
 const LAST_WAVE = 4;
 const BOSS_NAMES = ['キングスライム', 'ゴブリンキング', 'ガイコツ大将', '大まじない師', '魔王'];
-const BOSS_HP = [14, 16, 20, 16, 36];
+const BOSS_HP = [14, 16, 20, 16, 48];   // 北の魔王 (index 4) is the toughest
 BOSS_NAMES[9] = 'オーク隊長'; BOSS_HP[9] = 22;
 const WAVE_BOSS = [0, 1, 2, 4];   // wave 1..4 -> enemy type (wave 4 = 魔王, the last boss)
 // 協力モード：WAVEごとのボスの種類
