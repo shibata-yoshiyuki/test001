@@ -20,7 +20,7 @@ function onHostConnection(conn) {
     conns.set(conn.peer, { conn, slot, last: performance.now() });
     const stt = freshStat(), sv = conn.metadata.sv || {};
     stt.cleared = Math.max(0, Math.min(LAST_CH, sv.c | 0));
-    stt.owned = new Set(['knife', ...(Array.isArray(sv.w) ? sv.w.filter(w => PICK_WEAPONS.includes(w)) : [])]);
+    stt.owned = new Set(['knife', ...(Array.isArray(sv.w) ? sv.w.filter(w => STORY_WEAPONS.includes(w)) : [])]);
     stt.lm = mode === 'story' ? LIFE_MAX + Math.max(0, Math.min(3, sv.h | 0)) : LIFE_MAX; stt.life = stt.lm;   // extra hearts from the forest
     stt.chests = new Set(Array.isArray(sv.k) ? sv.k.filter(k => typeof k === 'string').slice(0, 200) : []);
     stt.sc = startSc;
@@ -36,6 +36,11 @@ function onHostConnection(conn) {
     if (d.t === 'atk') {                        // a guest attacked: the host decides with its own weapon record
       const sst = stats.get(rec.slot);
       withMap((sst && sst.sc) || 'island', () => performAttack({ id: String(d.id), slot: rec.slot, w: String(d.w), x: +d.x, y: +d.y, ax: +d.ax || 0, ay: +d.ay || 0 }, conn.peer));
+      return;
+    }
+    if (d.t === 'gift') {                       // story: the mayor of ひだまり町 hands over the heal staff
+      const st = stats.get(rec.slot);
+      if (mode === 'story' && st && d.w === 'heal' && st.sc === 't1' && (st.cleared || 0) >= 3) st.owned.add('heal');
       return;
     }
     if (d.t === 'equip') {                      // story: switch to a weapon you own

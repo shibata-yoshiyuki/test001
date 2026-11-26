@@ -154,6 +154,7 @@ function frame(now) {
     let vx = 0, vy = 0, step = speed * dt, dir = null;
     const prevX = me.x, prevY = me.y;
     if (me.down) { /* can't move while down */ }
+    else if (now < (me.castUntil || 0)) { target = null; vx = vy = 0; }   // praying with the heal staff: stand still
     else if (me.held.size) {
       for (const d of me.held) { vx += VEC[d][0]; vy += VEC[d][1]; }
       dir = [...me.held].pop(); target = null;
@@ -204,14 +205,14 @@ function frame(now) {
       if (WELL && Math.hypot(me.x - WELL.x, me.y - WELL.y) < Math.min(best, 28)) { interact = 'talk'; talkTo = 'well'; }
     }
     const inTown = mode === 'story' && safePlace();
-    const wkey = me.w + ':' + me.ammo + ':' + interact + ':' + (talkTo === 'well') + ':' + inTown + ':' + dlgOpen + ':' + mode + ':' + save.weapons.length;
+    const wkey = me.w + ':' + me.ammo + ':' + (now < (me.castUntil || 0)) + ':' + interact + ':' + (talkTo === 'well') + ':' + inTown + ':' + dlgOpen + ':' + mode + ':' + save.weapons.length;
     if (wkey !== lastWeaponKey) {
       lastWeaponKey = wkey;
       if (dlgOpen) { $('atk-name').textContent = 'つぎへ'; $('atk-ammo').textContent = ''; }
       else if (inTown) { $('atk-name').textContent = talkTo === 'well' ? 'しらべる' : interact === 'talk' ? 'はなす' : '－'; $('atk-ammo').textContent = interact ? '' : '人に近づく'; }
       else {
         $('atk-name').textContent = (WEAPONS[me.w] || WEAPONS.knife).name;
-        $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
+        $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : me.w === 'heal' ? (now < (me.castUntil || 0) ? '祈り中…' : '5秒で回復') : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
       }
       $('swap').hidden = !(mode === 'story' && !inTown && save.weapons.length > 0);
     }
@@ -299,14 +300,27 @@ function frame(now) {
       ctx.restore();
     }
     // melee arcs and hammer shockwaves
-    fx = fx.filter(f => now - f.t < (f.kind === 'slam' ? WEAPONS[f.w].delay + 260 : 170));
+    fx = fx.filter(f => now - f.t < (f.kind === 'slam' ? WEAPONS[f.w].delay + 260 : f.kind === 'heal' ? WEAPONS[f.w].cast + 350 : 170));
     for (const f of fx) {
       if (f.sc && f.sc !== curScene) continue;
       const W = WEAPONS[f.w], k = (now - f.t);
       const o = f.slot === me.slot ? me : otherBySlot(f.slot);
-      const cx = f.kind === 'slam' && o ? (o === me ? me.x : o.dx) : f.x, cy = (f.kind === 'slam' && o ? (o === me ? me.y : o.dy) : f.y) - 12;
+      const follow = (f.kind === 'slam' || f.kind === 'heal') && o;
+      const cx = follow ? (o === me ? me.x : o.dx) : f.x, cy = (follow ? (o === me ? me.y : o.dy) : f.y) - 12;
       ctx.save();
-      if (f.kind === 'melee') {
+      if (f.kind === 'heal') {                       // the healing circle: fills up for 5 seconds, then flashes
+        const p = Math.min(1, k / W.cast), done = k >= W.cast, fy = cy + 12;
+        if (o && (o === me ? me.down : o.down)) { ctx.restore(); continue; }
+        ctx.globalAlpha = done ? Math.max(0, 1 - (k - W.cast) / 350) : 1;
+        ctx.fillStyle = done ? 'rgba(255, 190, 220, .45)' : 'rgba(255, 170, 210, ' + (0.08 + 0.1 * p) + ')';
+        ctx.beginPath(); ctx.ellipse(cx, fy, W.radius, W.radius * .6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ff9fcf'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.lineDashOffset = -k / 60;
+        ctx.beginPath(); ctx.ellipse(cx, fy, W.radius, W.radius * .6, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+        if (!done) {                                   // how long until it works: a ring over the head
+          ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy - 22, 6, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = '#ffd6ea'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy - 22, 6, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2); ctx.stroke();
+        }
+      } else if (f.kind === 'melee') {
         const p = k / 170, r = W.reach * (0.65 + 0.35 * p);
         ctx.globalAlpha = 1 - p; ctx.strokeStyle = f.w === 'katana' ? '#d8f6ff' : '#ffffff'; ctx.lineWidth = f.w === 'katana' ? 3 : 2;
         const a0 = f.base - W.arc, a1 = f.base - W.arc + (W.arc * 2) * Math.min(1, p * 1.8);

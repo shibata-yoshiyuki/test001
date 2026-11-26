@@ -36,12 +36,13 @@ function fire(aimX, aimY, held) {
   if (mode === 'story' && safePlace()) { if (!held && interact) doInteract(); return; }   // no fighting in the castle or villages
   const now = performance.now();
   const W = WEAPONS[me.w] || WEAPONS.knife;
-  if (screen !== 'play' || !peer || me.down || now - me.lastShot < W.cd) return;
+  if (screen !== 'play' || !peer || me.down || now - me.lastShot < W.cd || now < (me.castUntil || 0)) return;
   if (aimX !== undefined) {
     const n = Math.hypot(aimX, aimY);
     if (n > 0.5) { me.aimX = aimX / n; me.aimY = aimY / n; me.dir = faceOf(aimX, aimY); }
   }
   me.lastShot = now; me.atkT = now;
+  if (W.kind === 'heal') { me.castUntil = now + W.cast; target = null; }   // praying: can't move for a while
   const a = { id: me.slot + '-' + (++shotSeq) + '-' + (now | 0), slot: me.slot, w: me.w, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, ax: me.aimX, ay: me.aimY };
   if (isHost) performAttack(a, null);
   else {
@@ -63,7 +64,33 @@ function performAttack(a, fromPeer) {
   attackFx(att);
   if (W.kind === 'melee') resolveMelee(att, W, now);
   else if (W.kind === 'slam') { const sc = SC; setTimeout(() => withMap(sc, () => resolveSlam(att, W)), W.delay); }
+  else if (W.kind === 'heal') { const sc = SC; st.castUntil = now + W.cast; setTimeout(() => withMap(sc, () => resolveHeal(att, W)), W.cast); }
   syncFromStats();
+}
+// いやしの杖：祈り終わったとき、丸の中で生きている仲間（自分も）をライフ1回復
+function resolveHeal(att, W) {
+  const st = stats.get(att.slot);
+  if (!st || st.down) return;                       // knocked down while praying: no heal
+  const me_ = playerTargets().find(p => p.slot === att.slot); if (!me_) return;
+  const healed = [];
+  for (const p of alivePlayers()) {
+    if (Math.hypot(p.x - me_.x, (p.y - me_.y) / .6) > W.radius) continue;
+    const s2 = stats.get(p.slot);
+    if (s2 && !s2.down && s2.life < lifeMaxOf(s2)) { s2.life++; healed.push(p.slot); }
+  }
+  const m = { t: 'heal', slot: att.slot, x: Math.round(me_.x), y: Math.round(me_.y), healed };
+  broadcast(m); if (SC === curScene) onHealFx(m);
+  syncFromStats();
+}
+// 回復したときの表示（全員のブラウザで動く）
+function onHealFx(d) {
+  const now = performance.now(), healed = Array.isArray(d.healed) ? d.healed : [];
+  for (const sl of healed) {
+    const p = sl === me.slot ? me : otherBySlot(sl);
+    if (p) for (let i = 0; i < 6; i++) sparks.push({ x: (p === me ? me.x : p.dx) + (Math.random() - .5) * 14, y: (p === me ? me.y : p.dy) - 12 - Math.random() * 14, t: now + i * 40, col: '255, 160, 200' });
+  }
+  if (healed.includes(me.slot)) toast(d.slot === me.slot ? 'いやしの杖：' + healed.length + '人のライフが1回復した' : slotName(d.slot) + 'のいやしの杖でライフが1回復した');
+  else if (d.slot === me.slot) toast('いやしの杖：回復が必要な仲間が丸の中にいなかった');
 }
 // ナイフ・刀：前の扇形に当たったか
 function resolveMelee(att, W, now) {
@@ -357,7 +384,7 @@ function onHit(d) {
 // 復活の表示
 function onRespawn(d) {
   if (d.slot === me.slot) {
-    me.x = d.x; me.y = d.y; me.down = false; me.life = d.lm || lifeMaxOf(me); target = null;
+    me.x = d.x; me.y = d.y; me.down = false; me.life = d.lm || lifeMaxOf(me); target = null; me.castUntil = 0;
     toast('復活しました');
   } else {
     const o = otherBySlot(d.slot);

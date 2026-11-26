@@ -218,6 +218,12 @@ function doInteract() {
   if (talkTo === 'king') {
     say(kingLines(save.cleared));
     if (!save.talked) { save.talked = true; writeSave(); }
+  } else if (talkTo.gift && !save.weapons.includes(talkTo.gift) && save.cleared >= 3) {   // a present (the heal staff)
+    const w = talkTo.gift;
+    say([{ n: talkTo.n, t: talkTo.giftLine }], () => banner(WEAPONS[w].name + 'を手に入れた！<small>5秒祈ると、まわりの丸の中の仲間（自分も）をライフ1回復／「持ちかえ」かQキーで切りかえ</small>', 4500));
+    save.weapons.push(w); writeSave();
+    if (isHost) { const st = stats.get(me.slot); if (st) st.owned.add(w); }
+    else if (hostConn && hostConn.open) hostConn.send({ t: 'gift', w });
   } else say(talkTo.lines.map(t => ({ n: talkTo.n, t })));
 }
 
@@ -254,7 +260,7 @@ function goTo(sc, from) {
   const p = (ENTS && ENTS[from]) || spawnPoint(me.slot);
   me.x = p.x + (me.slot - 2.5) * 6; me.y = p.y;
   if (!canStand(me.x, me.y)) { me.x = p.x; me.y = p.y; }
-  me.held.clear(); target = null; stick = null; lastUI = ''; storyPh = '';
+  me.held.clear(); target = null; stick = null; me.castUntil = 0; lastUI = ''; storyPh = '';
   if (isHost) { const st = stats.get(me.slot); if (st) st.sc = sc; }
   exitCool = performance.now() + 500;
   renderList();
@@ -282,7 +288,7 @@ function checkExits(px, py, now) {
 function ownedWeapons() { return ['knife', ...save.weapons]; }
 // 「持ちかえ」：持っている武器を順番に切りかえ
 function cycleWeapon() {
-  if (mode !== 'story' || safePlace()) return;
+  if (mode !== 'story' || safePlace() || performance.now() < (me.castUntil || 0)) return;
   const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。ダンジョンの先にいる武器の番人を倒そう'); return; }
   const w = list[(list.indexOf(me.w) + 1) % list.length];
   me.w = w;

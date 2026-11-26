@@ -21,11 +21,14 @@ const WEAPONS = {
   hammer: { name: '大ハンマー', icon: 'big_hammer',        kind: 'slam', radius: 50, delay: 260, cd: 1000, dmg: 3 },
   red:    { name: '赤い杖',     icon: 'red_magic_staff',   kind: 'shot', spd: 170, rng: 150, cd: 500, dmg: 0.5, spread: [-0.3, 0, 0.3], proj: 'orbR' },
   green:  { name: '緑の杖',     icon: 'green_magic_staff', kind: 'shot', spd: 125, rng: 260, cd: 450, dmg: 0.5, homing: true, proj: 'orbG' },
+  // いやしの杖：5秒かけて祈る（その間は動けない）→ まわりの丸の中にいる仲間（自分も）をライフ1回復
+  heal:   { name: 'いやしの杖', icon: 'heal_staff',        kind: 'heal', cast: 5000, radius: 56, cd: 6000, dmg: 0 },
 };
-const PICK_WEAPONS = ['bow', 'axe', 'katana', 'hammer', 'red', 'green'];
+const PICK_WEAPONS = ['bow', 'axe', 'katana', 'hammer', 'red', 'green'];   // weapons that can lie on the ground / be dropped
+const STORY_WEAPONS = [...PICK_WEAPONS, 'heal'];                          // weapons a story save may hold (the heal staff is a gift)
 const WEAPON_USES = 20;
 const W_IMGS = {};
-for (const k of ['knife', 'bow', 'arrow', 'throwing_axe', 'katana', 'big_hammer', 'red_magic_staff', 'green_magic_staff']) { const im = new Image(); im.src = 'assets/weapons/' + k + '.png'; W_IMGS[k] = im; }
+for (const k of ['knife', 'bow', 'arrow', 'throwing_axe', 'katana', 'big_hammer', 'red_magic_staff', 'green_magic_staff', 'heal_staff']) { const im = new Image(); im.src = 'assets/weapons/' + k + '.png'; W_IMGS[k] = im; }
 // one food and one drink (from the おまけ set)
 const ITEMS = {
   food:  { name: 'ケーキ',       img: 'pickup_food',  text: 'ライフが1回復！' },

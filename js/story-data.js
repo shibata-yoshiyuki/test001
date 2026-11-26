@@ -57,7 +57,7 @@ const SAVE_KEY = 'dotwalk_story_v1';
 function loadSave() {
   try {
     const v = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (v && typeof v === 'object') return { v: 2, cleared: Math.max(0, Math.min(LAST_CH, v.v === 2 ? v.cleared | 0 : [0, 1, 2, 4, 5][Math.min(4, v.cleared | 0)])), weapons: (Array.isArray(v.weapons) ? v.weapons : []).filter((w, i, a) => PICK_WEAPONS.includes(w) && a.indexOf(w) === i), talked: !!v.talked, chests: (Array.isArray(v.chests) ? v.chests : []).filter(k => typeof k === 'string').slice(0, 200), hearts: Math.max(0, Math.min(3, v.hearts | 0)) };
+    if (v && typeof v === 'object') return { v: 2, cleared: Math.max(0, Math.min(LAST_CH, v.v === 2 ? v.cleared | 0 : [0, 1, 2, 4, 5][Math.min(4, v.cleared | 0)])), weapons: (Array.isArray(v.weapons) ? v.weapons : []).filter((w, i, a) => STORY_WEAPONS.includes(w) && a.indexOf(w) === i), talked: !!v.talked, chests: (Array.isArray(v.chests) ? v.chests : []).filter(k => typeof k === 'string').slice(0, 200), hearts: Math.max(0, Math.min(3, v.hearts | 0)) };
   } catch (e) {}
   return { v: 2, cleared: 0, weapons: [], talked: false, chests: [], hearts: 0 };
 }
@@ -116,7 +116,7 @@ const NPC_DEFS = {                 // every villager says one sentence
     { k: 'elf_f', n: '木の実売り', tx: 13, ty: 14, lines: ['迷いの森の左上の出口を抜けると、ゴブリンの巣があるんだって。'] },
   ],
   t1: [   // hiding in their houses until the town is saved
-    { k: 'doc', n: '町長', tx: 14, ty: 8, hide: true, lines: ['町を救ってくれて、本当にありがとう！'] },
+    { k: 'doc', n: '町長', tx: 14, ty: 8, hide: true, gift: 'heal', giftLine: '町を救ってくれたお礼に、この「いやしの杖」を持っていきなさい。', lines: ['町を救ってくれて、本当にありがとう！'] },
     { k: 'dwarf_m', n: '鍛冶屋', tx: 20, ty: 8, hide: true, lines: ['墓地の奥のゾンビ巨人は、大ハンマーか緑の杖を落とすそうだ。'] },
     { k: 'elf_f', n: '宿屋の娘', tx: 9, ty: 14, hide: true, lines: ['魔王城の場所は、ガイコツ大将を倒せばわかるっておじいちゃんが言ってたよ。'] },
     { k: 'knight_f', n: '町の衛兵', tx: 24, ty: 14, hide: true, lines: ['オークどもめ、また来たら追い返してやる！'] },
