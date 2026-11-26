@@ -234,7 +234,7 @@ let MAP_W = 72, MAP_H = 54;                   // current map in tiles (changes w
 let WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const ID_PREFIX = 'dotwalk-shibata-test001-';
 const CODE_CHARS = '0123456789';
-const VERSION = '2026-11-25j';         // bump on every release; host and guests must match
+const VERSION = '2026-11-26a';         // bump on every release; host and guests must match
 const SEND_MS = 66, TIMEOUT_MS = 15000, JOIN_TIMEOUT_MS = 25000;
 // battle
 const LIFE_MAX = 3, SHOT_SPEED = 170, SHOT_RANGE = 150, SHOT_CD = 450, INV_MS = 1000, DOWN_MS = 3000;
@@ -329,14 +329,13 @@ let enemies = new Map();           // id -> {id, type, x, y, hp, maxHp, face, ..
 let enemySeq = 0;
 const game = { wave: 0, phase: 'wait', until: 0, queue: [], nextSpawn: 0, banner: '' };
 let lastUI = '', lastWeaponKey = '';
-const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9, fastUntil: 0, cleared: 0, owned: new Set(['knife']) });
+const freshStat = () => ({ life: LIFE_MAX, invUntil: performance.now() + 1500, down: false, downUntil: 0, ko: 0, weapon: 'knife', ammo: 0, lastAtk: -1e9, fastUntil: 0, cleared: 0, owned: new Set(['knife']), chests: new Set() });
 // ---------- story mode ----------
 const KINGDOM = 'ドット王国';
 const LAST_CH = 5, KEY_CH = 4;      // KEY_CH: the boss whose map shows the way to the demon castle
 const CH = {
   1: { title: 'スライムの丘', place: '丘',
-    intro: [{ n: '村人', t: '丘のスライムの群れを、どうか追い払ってください！' },
-            { n: '', t: '（寄り道：丘の北の「オーガのねぐら」で、オーガが宝箱を守っているらしい）' }],
+    intro: [{ n: '村人', t: '丘のスライムの群れを、どうか追い払ってください！' }],
     bossLine: 'ぷるぷる……ここはワシらの丘だぁ！',
     outro: [{ n: '村人', t: 'ありがとう、スライムたちもおとなしくなりました！' },
             { n: '', t: '草原の北の「迷いの森」への柵がひらいた！' }] },
@@ -351,14 +350,12 @@ const CH = {
     outro: [{ n: '町長', t: '南の墓地のガイコツ大将が、魔王城の手がかりを持っているそうです。' },
             { n: '', t: '草原の南の「墓地」への柵がひらいた！ 町の人たちとも話してみよう' }] },
   4: { title: 'さまよう墓地', place: '墓地',
-    intro: [{ n: '墓守', t: 'ガイコツ大将が、魔王城の地図を持っておるそうじゃ。' },
-            { n: '', t: '（寄り道：南の「墓地の奥」で、ゾンビ巨人が宝箱を守っている……）' }],
+    intro: [{ n: '墓守', t: 'ガイコツ大将が、魔王城の地図を持っておるそうじゃ。' }],
     bossLine: 'カタカタ……地図は渡さぬぞ……',
     outro: [{ n: '', t: 'ガイコツ大将から、魔王城の地図を手に入れた！' },
             { n: '', t: '魔王城へは「もりかげ村の古井戸」から地下道で行けるらしい！' }] },
   5: { title: '北の魔王城', place: '魔王城',
-    intro: [{ n: '北の魔王', t: 'よく来たな、小さき者どもよ。ここがお前たちの墓場だ！' },
-            { n: '', t: '（寄り道：北の「魔王城の地下」で、オーク呪術師が宝箱を守っている……）' }],
+    intro: [{ n: '北の魔王', t: 'よく来たな、小さき者どもよ。ここがお前たちの墓場だ！' }],
     bossLine: 'ゆくぞ！ わが力を思い知れ！',
     outro: [{ n: '北の魔王', t: 'ば、ばかな……この私が……！' },
             { n: '', t: '北の魔王を倒した！ 光る門からお城へ帰ろう！' }] },
@@ -385,9 +382,9 @@ const SAVE_KEY = 'dotwalk_story_v1';
 function loadSave() {
   try {
     const v = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (v && typeof v === 'object') return { v: 2, cleared: Math.max(0, Math.min(LAST_CH, v.v === 2 ? v.cleared | 0 : [0, 1, 2, 4, 5][Math.min(4, v.cleared | 0)])), weapons: (Array.isArray(v.weapons) ? v.weapons : []).filter((w, i, a) => PICK_WEAPONS.includes(w) && a.indexOf(w) === i), talked: !!v.talked };
+    if (v && typeof v === 'object') return { v: 2, cleared: Math.max(0, Math.min(LAST_CH, v.v === 2 ? v.cleared | 0 : [0, 1, 2, 4, 5][Math.min(4, v.cleared | 0)])), weapons: (Array.isArray(v.weapons) ? v.weapons : []).filter((w, i, a) => PICK_WEAPONS.includes(w) && a.indexOf(w) === i), talked: !!v.talked, chests: (Array.isArray(v.chests) ? v.chests : []).filter(k => typeof k === 'string').slice(0, 200) };
   } catch (e) {}
-  return { v: 2, cleared: 0, weapons: [], talked: false };
+  return { v: 2, cleared: 0, weapons: [], talked: false, chests: [] };
 }
 let save = loadSave();
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} renderSaveInfo(); }
@@ -408,14 +405,13 @@ const LINKS = {
   v3: [['n', 'f1', 0]],
   f3: [['n', 'f1', 0], ['s', 'f3m', 0]],
   f3m: [['n', 'f3', 0]],
-  f4: [['s', 'v2', 0], ['n', 'f4m', 0]],   // the demon castle: only through the old well in もりかげ村
-  f4m: [['s', 'f4', 0]],
+  f4: [['s', 'v2', 0]],              // the demon castle: only through the old well in もりかげ村 (the last place: no side room)
 };
 // kinds of places: hub = a few weak monsters / maze = monsters keep coming / bossroom = straight to the boss /
 // mid = the mid-bosses guarding weapon chests / (none) = waves, then the boss
-const AREA_KIND = { f1: 'hub', f2: 'maze', f2b: 'bossroom', h1m: 'mid', f2m: 'mid', f3m: 'mid', f4m: 'mid' };
-const AREA_PLACES = ['f1', 'h1', 'h1m', 'f2', 'f2b', 'f2m', 't1', 'f3', 'f3m', 'f4', 'f4m'];
-const MID_CH = { h1m: 1, f2m: 2, f3m: 4, f4m: 5 };          // which chapter's mid-boss lives in each side room
+const AREA_KIND = { f1: 'hub', f2: 'maze', f2b: 'bossroom', h1m: 'mid', f2m: 'mid', f3m: 'mid' };
+const AREA_PLACES = ['f1', 'h1', 'h1m', 'f2', 'f2b', 'f2m', 't1', 'f3', 'f3m', 'f4'];
+const MID_CH = { h1m: 1, f2m: 2, f3m: 4 };          // which chapter's mid-boss lives in each side room
 const CH_PLACE = { 1: 'h1', 2: 'f2b', 3: 't1', 4: 'f3', 5: 'f4' };
 const FIELD_CH = { h1: 1, f2b: 2, t1: 3, f3: 4, f4: 5 };
 const FIELD_BACK = { f1: 'castle', h1: 'castle', f2: 'castle', t1: 'castle', f3: 'castle', f4: 'castle' };   // wiped out anywhere: wake up in the castle
@@ -424,35 +420,35 @@ const PLACE_NAME = { castle: 'お城', v1: 'はじまりの村', v2: 'もりか�
 const NPC_DEFS = {                 // every villager says one sentence
   castle: [
     { k: 'doc', n: '大臣', tx: 17, ty: 7, lines: ['草原から丘・森・町・墓地へ道がつながっていて、草原では黄色い矢印が次の行き先を指しておりますぞ。'] },
-    { k: 'knight_f', n: '近衛兵', tx: 8, ty: 8, lines: ['中ボスの宝箱からは強い武器が出るが、ひとつの場所で1人1つまでだ。'] },
+    { k: 'knight_f', n: '近衛兵', tx: 8, ty: 8, lines: ['中ボスは強い武器を落とすが、拾えるのはひとつの場所で1人1つまでだ。'] },
     { k: 'knight_m', n: 'お城の兵士', tx: 9, ty: 15, lines: ['この下の門を出ると、はじまりの村だ。'] },
     { k: 'elf_f', n: '侍女', tx: 18, ty: 15, lines: ['ボスを倒すと、次の場所への柵がひらくそうですよ。'] },
   ],
   v1: [
     { k: 'doc', n: '村長', tx: 8, ty: 8, lines: ['東の橋をわたると、草原じゃよ。'] },
-    { k: 'elf_f', n: 'ミナ', tx: 23, ty: 8, lines: ['丘の北のオーガのねぐらでオーガを倒すと、刀か投げ斧の宝箱がもらえるんだって！'] },
+    { k: 'elf_f', n: 'ミナ', tx: 23, ty: 8, lines: ['丘の北のオーガのねぐらのオーガは、刀か投げ斧を落とすんだって！'] },
     { k: 'knight_m', n: '見張りの兵士', tx: 18, ty: 14, lines: ['キングスライムが飛び上がったら、地面の赤い丸から逃げるんだ。'] },
     { k: 'dwarf_m', n: '商人', tx: 27, ty: 14, lines: ['ケーキはライフが1つ回復、メロンソーダは10秒間足が速くなるよ。'] },
     { k: 'elf_m', n: '少年', tx: 8, ty: 14, lines: ['最初のナイフは目の前しか届かないから、敵にぐっと近づいて切るんだよ。'] },
   ],
   v2: [
     { k: 'dwarf_f', n: '木こり', tx: 8, ty: 8, lines: ['ゴブリンキングが赤い線を出したら、横にずれて突進をよけろ！'] },
-    { k: 'elf_m', n: '狩人', tx: 23, ty: 8, lines: ['迷いの森の右上の出口の先で、マスクオークが弓か赤い杖の宝箱を守っているらしい。'] },
-    { k: 'dwarf_m', n: '森番', tx: 29, ty: 8, lines: ['迷いの森の行き止まりには宝箱があって、いちばん奥のには武器が入っているらしいぞ。'] },
+    { k: 'elf_m', n: '狩人', tx: 23, ty: 8, lines: ['迷いの森の右上の出口の先にいるマスクオークは、弓か赤い杖を落とすらしい。'] },
+    { k: 'dwarf_m', n: '森番', tx: 29, ty: 8, lines: ['迷いの森の行き止まりには、ケーキやメロンソーダの入った宝箱があるぞ。'] },
     { k: 'wizzard_f', n: 'おばあさん', tx: 18, ty: 14, lines: ['その古井戸は、昔どこか遠くへ続いていたそうだよ。'] },
     { k: 'knight_m', n: '旅の剣士', tx: 27, ty: 14, lines: ['オーク隊長のたいまつで地面が赤く光ったら、すぐに離れろ！'] },
     { k: 'elf_f', n: '木の実売り', tx: 13, ty: 14, lines: ['迷いの森の左上の出口を抜けると、ゴブリンの巣があるんだって。'] },
   ],
   t1: [   // hiding in their houses until the town is saved
     { k: 'doc', n: '町長', tx: 14, ty: 8, hide: true, lines: ['町を救ってくれて、本当にありがとう！'] },
-    { k: 'dwarf_m', n: '鍛冶屋', tx: 20, ty: 8, hide: true, lines: ['墓地の奥のゾンビ巨人の宝箱には、大ハンマーか緑の杖が入っているそうだ。'] },
+    { k: 'dwarf_m', n: '鍛冶屋', tx: 20, ty: 8, hide: true, lines: ['墓地の奥のゾンビ巨人は、大ハンマーか緑の杖を落とすそうだ。'] },
     { k: 'elf_f', n: '宿屋の娘', tx: 9, ty: 14, hide: true, lines: ['魔王城の場所は、ガイコツ大将を倒せばわかるっておじいちゃんが言ってたよ。'] },
     { k: 'knight_f', n: '町の衛兵', tx: 24, ty: 14, hide: true, lines: ['オークどもめ、また来たら追い返してやる！'] },
   ],
   v3: [
     { k: 'doc', n: '墓守', tx: 8, ty: 8, lines: ['ガイコツ大将のうずまき状の骨は、弾のすき間から近づくんじゃ。'] },
     { k: 'knight_f', n: '僧侶', tx: 23, ty: 8, lines: ['緑の杖の弾は、敵を追いかけてくれますよ。'] },
-    { k: 'knight_m', n: '墓地の番人', tx: 29, ty: 8, lines: ['魔王城の地下のオーク呪術師の宝箱は、何が出るかわからないらしい。'] },
+    { k: 'knight_m', n: '墓地の番人', tx: 29, ty: 8, lines: ['墓地の南の出口の先に、ゾンビ巨人が眠っているらしい。'] },
     { k: 'lizard_m', n: '旅のトカゲ族', tx: 18, ty: 14, lines: ['魔王は体力が半分になると怒って、弾が倍になるぞ。'] },
     { k: 'wizzard_f', n: '旅の魔法使い', tx: 8, ty: 14, lines: ['魔王がふっと消えたら、すぐ近くに現れるから気をつけて。'] },
     { k: 'elf_f', n: '子ども', tx: 27, ty: 14, lines: ['魔王城への行き方は、ガイコツ大将を倒すとわかるんだって！'] },
@@ -513,7 +509,7 @@ function renderSaveInfo() {
     let armed = 0;
     b.addEventListener('click', () => {
       if (!armed) { armed = setTimeout(() => { armed = 0; b.textContent = '記録を消す'; }, 4000); b.textContent = '本当に消す？（もう一度押す）'; return; }
-      clearTimeout(armed); save = { cleared: 0, weapons: [], talked: false }; writeSave();
+      clearTimeout(armed); save = { v: 2, cleared: 0, weapons: [], talked: false, chests: [] }; writeSave();
     });
     el.append(b);
   }
@@ -531,7 +527,7 @@ function createRoom(tries, m) {
     loadScene(m === 'story' ? 'castle' : 'island');
     const sp = spawnPoint(1); me.x = sp.x; me.y = sp.y;
     stats.get(1).sc = curScene;
-    if (m === 'story') { const st = stats.get(1); st.cleared = save.cleared; st.owned = new Set(['knife', ...save.weapons]); }
+    if (m === 'story') { const st = stats.get(1); st.cleared = save.cleared; st.owned = new Set(['knife', ...save.weapons]); st.chests = new Set(save.chests); }
     resetGame();
     p.on('connection', onHostConnection);
     enterPlay();
@@ -554,7 +550,7 @@ function joinRoom() {
   let giveUp = 0, slowMsg = 0;
   p.on('open', () => {
     lobbyMsg('部屋の親につないでいます…');
-    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION, sv: { c: save.cleared, w: save.weapons } } });
+    const conn = p.connect(ID_PREFIX + code, { reliable: true, metadata: { c: me.c, v: VERSION, sv: { c: save.cleared, w: save.weapons, k: save.chests } } });
     slowMsg = setTimeout(() => { if (!hostConn) lobbyMsg('部屋の親につないでいます…（時間がかかっています。親の画面が開いたままか確認してください）'); }, 8000);
     giveUp = setTimeout(() => {
       if (hostConn) return;
@@ -620,6 +616,7 @@ function onHostConnection(conn) {
     const stt = freshStat(), sv = conn.metadata.sv || {};
     stt.cleared = Math.max(0, Math.min(LAST_CH, sv.c | 0));
     stt.owned = new Set(['knife', ...(Array.isArray(sv.w) ? sv.w.filter(w => PICK_WEAPONS.includes(w)) : [])]);
+    stt.chests = new Set(Array.isArray(sv.k) ? sv.k.filter(k => typeof k === 'string').slice(0, 200) : []);
     stt.sc = startSc;
     stats.set(slot, stt);
     others.set(conn.peer, { ...st, dx: st.x, dy: st.y, t: 0 });
@@ -790,7 +787,12 @@ function hitEnemy(e, by, dmg, shotId, keep) {
   if (T.mid && !e.aggro) wakeMids(e);
   if (e.hp <= 0) {
     enemies.delete(e.id); if (st) st.ko++;
-    if (T.mid) { spawnPickup('chest', e.x, e.y, { ch: MID_CH[SC] || FIELD_CH[SC] || LAST_CH }); if (SC === curScene) toast(slotName(by) + 'が' + T.name + 'を倒した！ 宝箱が出た！'); }
+    if (T.mid) {                         // drops a weapon to keep (one per person per visit)
+      const pool = CH_POOL[MID_CH[SC]] || PICK_WEAPONS, kst = stats.get(by), fresh = pool.filter(k => !kst || !kst.owned.has(k));
+      const list = fresh.length ? fresh : pool, w = list[Math.random() * list.length | 0];
+      spawnPickup(w, e.x, e.y, { keep: 1 });
+      if (SC === curScene) toast(slotName(by) + 'が' + T.name + 'を倒した！ ' + WEAPONS[w].name + 'を落とした！');
+    }
     else if (e.boss && mode === 'story') { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropItem('food', e.x, e.y); }
     else if (e.boss) { toast(slotName(by) + 'が' + (BOSS_NAMES[e.type] || 'ボス') + 'を倒した！'); dropWeapon(e.x - 12, e.y); dropWeapon(e.x + 12, e.y); }
     else if (mode === 'story') {                  // story: small enemies never drop weapons
@@ -866,7 +868,8 @@ function stepShots(dt, now) {
 }
 // ---------- weapons on the ground ----------
 function spawnPickup(w, x, y, extra) {
-  if (pickups.size >= 10) { const old = [...pickups.values()].find(p => p.w !== 'chest'); if (old) pickups.delete(old.id); }
+  const here = [...pickups.values()].filter(p => p.sc === SC);   // at most 10 things on the ground per place; chests and kept weapons stay
+  if (here.length >= 10) { const old = here.find(p => p.w !== 'tchest' && !p.keep); if (old) pickups.delete(old.id); }
   const id = ++pickSeq; pickups.set(id, { id, w, x, y, sc: SC, ...(extra || {}) }); return id;
 }
 function randomWeapon() { return PICK_WEAPONS[Math.random() * PICK_WEAPONS.length | 0]; }
@@ -890,33 +893,22 @@ function stepPickups(now) {      // host
       if (Math.abs(t.x - pk.x) < 11 && Math.abs(t.y - pk.y) < 9) {
         const st = stats.get(t.slot);
         let w = pk.w, chest = 0;
-        if (pk.w === 'tchest' && pk.wpn) {   // the maze's best chest: a weapon to keep (like a mid-boss chest, but anyone may take it)
-          const pick = a => a[Math.random() * a.length | 0];
-          const pool = CH_POOL[2], fresh = pool.filter(k => !st.owned.has(k)), fresh2 = PICK_WEAPONS.filter(k => !st.owned.has(k));
-          w = fresh.length ? pick(fresh) : fresh2.length ? pick(fresh2) : pick(pool);
-          st.owned.add(w); st.weapon = w; st.ammo = 0;
-          pickups.delete(pk.id);
-          const m = { t: 'pick', id: pk.id, slot: t.slot, w, chest: 1 };
-          broadcast(m); if (SC === curScene) onPick(m); syncFromStats();
-          break;
-        }
-        if (pk.w === 'tchest') {             // a small treasure chest: a cake or a melon soda pops out
+        if (pk.w === 'tchest') {             // a small treasure chest: a cake or a melon soda pops out (once per player, ever)
+          if (st.chests.has(pk.key)) { if (!st.tHint) { st.tHint = true; sendNote(t.slot, 'この宝箱はもうあけました'); } continue; }
+          st.chests.add(pk.key); st.tHint = false;
           pickups.delete(pk.id);
           const item = Math.random() < .5 ? 'food' : 'drink';
           spawnPickup(item, pk.x, pk.y + 14);
-          const m = { t: 'pick', id: pk.id, slot: t.slot, w: 'tchest', item };
+          const m = { t: 'pick', id: pk.id, slot: t.slot, w: 'tchest', item, key: pk.key };
           broadcast(m); if (SC === curScene) onPick(m);
           break;
         }
         if (pk.w === 'food') { if (st.life >= LIFE_MAX) continue; st.life++; }     // full life: leave the cake for someone else
         else if (pk.w === 'drink') st.fastUntil = now + FAST_MS;
-        else if (pk.w === 'chest') {           // story: one chest = one weapon for one person, kept forever
+        else if (pk.keep) {                    // story: a mid-boss's weapon, kept forever (one per person per visit)
           const ckey = SC + ':' + areaOf(SC).inst;
-          if (st.chestSq === ckey) { if (!st.chestHint) { st.chestHint = true; sendNote(t.slot, 'この章の宝箱はもう1つあけました。残りの宝箱は仲間のぶんです'); } continue; }
+          if (st.chestSq === ckey) { if (!st.chestHint) { st.chestHint = true; sendNote(t.slot, 'ここの武器はもう1つ拾いました。残りは仲間のぶんです'); } continue; }
           st.chestSq = ckey; st.chestHint = false;
-          const pick = a => a[Math.random() * a.length | 0];
-          const pool = CH_POOL[pk.ch] || PICK_WEAPONS, fresh = pool.filter(k => !st.owned.has(k)), fresh2 = PICK_WEAPONS.filter(k => !st.owned.has(k));
-          w = fresh.length ? pick(fresh) : fresh2.length ? pick(fresh2) : pick(pool);
           st.owned.add(w); st.weapon = w; st.ammo = 0; chest = 1;
         }
         else { st.weapon = pk.w; st.ammo = WEAPON_USES; }
@@ -936,7 +928,10 @@ function onPick(d) {
   pickups.delete(d.id);
   if (d.w === 'tchest') {
     sparks.push({ x: d.x || me.x, y: me.y - 14, t: performance.now(), col: '255, 215, 90' });
-    if (d.slot === me.slot) toast('宝箱をあけた！ ' + (ITEMS[d.item] ? ITEMS[d.item].name : '') + 'が出てきた');
+    if (d.slot === me.slot) {
+      toast('宝箱をあけた！ ' + (ITEMS[d.item] ? ITEMS[d.item].name : '') + 'が出てきた');
+      if (d.key && !save.chests.includes(d.key)) { save.chests.push(String(d.key)); writeSave(); }
+    }
     return;
   }
   const it = ITEMS[d.w];
@@ -958,8 +953,8 @@ function onPick(d) {
       me.w = d.w; me.ammo = 0;
       if (!save.weapons.includes(d.w)) save.weapons.push(d.w);
       writeSave();
-      banner('宝箱をあけた！<small>' + W.name + 'を手に入れた（ずっと使える／「持ちかえ」かQキーで切りかえ）</small>', 3500);
-    } else { const o = otherBySlot(d.slot); if (o) o.w = d.w; toast(slotName(d.slot) + 'が宝箱から' + W.name + 'を手に入れた！'); }
+      banner(W.name + 'を手に入れた！<small>ずっと使える／「持ちかえ」かQキーで切りかえ</small>', 3500);
+    } else { const o = otherBySlot(d.slot); if (o) o.w = d.w; toast(slotName(d.slot) + 'が' + W.name + 'を手に入れた！'); }
     refreshListIfChanged();
     return;
   }
@@ -1082,7 +1077,7 @@ function sendBossFx(k, x, y) { const m = { t: 'bfx', k, x: Math.round(x), y: Mat
 function onBossFx(d) {
   bossFx.push({ k: d.k, x: d.x, y: d.y, t: performance.now() });
   if (d.k === 'rage') toast('魔王が怒った！ 攻撃が激しくなる！');
-  if (d.k === 'wake') toast('中ボスが目を覚ました！ 倒すと宝箱が出る');
+  if (d.k === 'wake') toast('中ボスが目を覚ました！ 倒すと武器を落とす');
 }
 // ---------- story: mid-bosses ----------
 function wakeMids(src) {
@@ -1411,7 +1406,10 @@ function stepArea(sc, A, ch, inside, now) {
   if (kind === 'hub' || kind === 'maze') {        // 草原: a few weak monsters / 迷いの森: they keep coming
     if (A.phase === 'idle') {
       A.phase = kind; A.inst++; A.nextSpawn = now + (kind === 'maze' ? 1500 : 2500);
-      for (const c of CHEST_SPOTS) spawnPickup('tchest', c.x, c.y, c.wpn ? { wpn: 1 } : null);
+      CHEST_SPOTS.forEach((c, k) => {       // only chests that someone here has not opened yet
+        const key = sc + ':' + k;
+        if (inside.some(([, st]) => !st.chests.has(key))) spawnPickup('tchest', c.x, c.y, { key });
+      });
     }
     const lv = Math.max(0, ...inside.map(([, st]) => st.cleared || 0));
     const types = kind === 'maze' ? [0, 1, 1] : lv >= 2 ? [0, 1, 1] : lv >= 1 ? [0, 0, 1] : [0];
@@ -1502,7 +1500,7 @@ function storyUI(g) {
       if (g.sc === 'castle' && !save.talked) toast('王様に近づいて「はなす」を押してみよう');
       else if (g.sc[0] === 'v') toast('村の人に話しかけると、冒険のヒントが聞けるかも');
       else if (AREA_KIND[g.sc] === 'maze') toast('迷路だ！ 敵がどんどんわいてくる。奥の出口を目指そう');
-      else if (AREA_KIND[g.sc] === 'mid') toast('中ボスが宝箱を守って眠っている。近づくと目を覚ますぞ');
+      else if (AREA_KIND[g.sc] === 'mid') toast('中ボスが眠っている。近づくと目を覚ますぞ');
     }
     return;
   }
@@ -1613,7 +1611,7 @@ function endRoom(msg) {
   enemies = new Map(); bossFx = []; game.queue = []; game.phase = 'wait'; lastUI = ''; banner(''); $('mode-chip').textContent = '';
   Object.assign(me, { life: LIFE_MAX, down: false, inv: false, ko: 0, w: 'knife', ammo: 0, fastUntil: 0 });
   fx = []; pickups.clear();
-  dlgQueue = []; if (dlgTyping) clearInterval(dlgTyping); dlgTyping = 0; dlgOpen = false; $('dialog').hidden = true; $('swap').hidden = true;
+  dlgQueue = []; if (dlgTyping) clearInterval(dlgTyping); dlgTyping = 0; clearTimeout(dlgAuto); dlgOpen = false; $('dialog').hidden = true; $('swap').hidden = true;
   storyPh = ''; storyCh = 0; renderSaveInfo();
   if (p) try { p.destroy(); } catch (e) {}
   history.replaceState(null, '', location.pathname);
@@ -1684,19 +1682,21 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { if (ATTACK_KEYS.has(e.code)) atkHeld = false; const d = KEYMAP[e.code]; if (d) me.held.delete(d); });
 addEventListener('blur', () => { me.held.clear(); atkHeld = false; });
 // ---------- story: talking, the gate, switching weapons ----------
-let dlgQueue = [], dlgOpen = false, dlgDone = null, dlgTyping = 0, dlgFull = '', interact = null;
+let dlgQueue = [], dlgOpen = false, dlgDone = null, dlgTyping = 0, dlgFull = '', interact = null, dlgAuto = 0;
+function dlgWait() { clearTimeout(dlgAuto); dlgAuto = setTimeout(() => { if (dlgOpen) nextLine(); }, 1600 + dlgFull.length * 90); }   // read time, then the next line
 function say(lines, onDone) {
   if (!lines || !lines.length) return;
   dlgQueue = lines.slice(); dlgDone = onDone || null; dlgOpen = true; $('dialog').hidden = false; nextLine(true);
 }
 function nextLine(first) {
-  if (!first && dlgTyping) { clearInterval(dlgTyping); dlgTyping = 0; $('dlg-text').textContent = dlgFull; return; }
+  clearTimeout(dlgAuto);
+  if (!first && dlgTyping) { clearInterval(dlgTyping); dlgTyping = 0; $('dlg-text').textContent = dlgFull; dlgWait(); return; }
   const l = dlgQueue.shift();
   if (!l) { dlgOpen = false; $('dialog').hidden = true; const f = dlgDone; dlgDone = null; if (f) f(); return; }
   if (dlgTyping) clearInterval(dlgTyping);
   $('dlg-name').textContent = l.n || ''; dlgFull = l.t; $('dlg-text').textContent = '';
   let i = 0;
-  dlgTyping = setInterval(() => { i += 2; $('dlg-text').textContent = dlgFull.slice(0, i); if (i >= dlgFull.length) { clearInterval(dlgTyping); dlgTyping = 0; } }, 28);
+  dlgTyping = setInterval(() => { i += 2; $('dlg-text').textContent = dlgFull.slice(0, i); if (i >= dlgFull.length) { clearInterval(dlgTyping); dlgTyping = 0; dlgWait(); } }, 28);
 }
 $('dialog').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); nextLine(); });
 function doInteract() {
@@ -1764,7 +1764,7 @@ function checkExits(px, py, now) {
 function ownedWeapons() { return ['knife', ...save.weapons]; }
 function cycleWeapon() {
   if (mode !== 'story' || safePlace()) return;
-  const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。寄り道の中ボスを倒して宝箱をあけよう'); return; }
+  const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。ダンジョンの先にいる中ボスを倒そう'); return; }
   const w = list[(list.indexOf(me.w) + 1) % list.length];
   me.w = w;
   if (isHost) { const st = stats.get(me.slot); if (st && st.owned.has(w)) st.weapon = w; syncFromStats(); }
@@ -1850,7 +1850,8 @@ function endPointer(e, tapAllowed) {
   if (!ptr || e.pointerId !== ptr.id) return;
   if (tapAllowed && !ptr.drag && performance.now() - ptr.t0 < TAP_MS) {
     const g = toGame(e);
-    target = { x: g.x + camX, y: g.y + camY };
+    if (target) target = null;                       // walking to a tapped spot: a tap stops you
+    else target = { x: g.x + camX, y: g.y + camY };
   }
   ptr = null; stick = null;
 }
@@ -1887,7 +1888,6 @@ const SCENES = {
   f2b: { w: 42, h: 32, seed: 2401, oseed: 2402, theme: 'forest', fth: .55, pT: .22, pTl: .05, pR: .02 },
   f2m: { w: 38, h: 30, seed: 2301, oseed: 2302, theme: 'forest', fth: .5, pT: .32, pTl: .08, pR: .02, lair: true, lairCenter: true },
   f3m: { w: 38, h: 30, seed: 3401, oseed: 3402, theme: 'grave', fth: .6, pT: .16, pTl: .04, pR: .08, lair: true, lairCenter: true },
-  f4m: { w: 38, h: 30, seed: 4501, oseed: 4502, theme: 'demon', fth: .62, pT: .14, pTl: .02, pR: .06, lair: true, lairCenter: true },
   f3: { w: 56, h: 42, seed: 3301, oseed: 3302, theme: 'grave',  fth: .6,  pT: .14, pTl: .03,  pR: .07 },
   f4: { w: 56, h: 42, seed: 4401, oseed: 4402, theme: 'demon',  fth: .62, pT: .12, pTl: .015, pR: .05 },
 };
@@ -2077,16 +2077,22 @@ function buildMaze(rnd) {             // 迷いの森: corridors 3 tiles wide be
   const open = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) obst[y][x] = 0; };
   const X = i => 2 + i * P, Y = j => 2 + j * P;
   const seen = [], deg = []; for (let j = 0; j < R; j++) { seen.push(new Array(C).fill(false)); deg.push(new Array(C).fill(0)); }
-  const ei = C / 2 | 0, ej = R - 1, stack = [[ei, ej]]; seen[ej][ei] = true; open(X(ei), Y(ej), X(ei) + 2, Y(ej) + 2);
-  while (stack.length) {
-    const [i, j] = stack[stack.length - 1];
-    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => [i + a, j + b]).filter(([a, b]) => a >= 0 && b >= 0 && a < C && b < R && !seen[b][a]);
-    if (!nb.length) { stack.pop(); continue; }
-    const [a, b] = nb[rnd() * nb.length | 0];
-    seen[b][a] = true; deg[j][i]++; deg[b][a]++;
-    open(Math.min(X(i), X(a)), Math.min(Y(j), Y(b)), Math.max(X(i), X(a)) + 2, Math.max(Y(j), Y(b)) + 2);
-    stack.push([a, b]);
+  const ei = C / 2 | 0, ej = R - 1; seen[ej][ei] = true; open(X(ei), Y(ej), X(ei) + 2, Y(ej) + 2);
+  const join = (i, j, a, b) => { deg[j][i]++; deg[b][a]++; open(Math.min(X(i), X(a)), Math.min(Y(j), Y(b)), Math.max(X(i), X(a)) + 2, Math.max(Y(j), Y(b)) + 2); };
+  const N4 = (i, j) => [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]].filter(([a, b]) => a >= 0 && b >= 0 && a < C && b < R);
+  // randomized Prim: grows outward in every direction, so there are many forks and side paths
+  const front = []; const addFront = (i, j) => { for (const [a, b] of N4(i, j)) if (!seen[b][a] && !front.some(f => f[0] === a && f[1] === b)) front.push([a, b]); };
+  addFront(ei, ej);
+  while (front.length) {
+    const [a, b] = front.splice(rnd() * front.length | 0, 1)[0];
+    const done = N4(a, b).filter(([i, j]) => seen[j][i]);
+    const [i, j] = done[rnd() * done.length | 0];
+    seen[b][a] = true; join(i, j, a, b); addFront(a, b);
   }
+  // a few extra openings make loops, so there is more than one way through
+  const wallOpen = (i, j, a, b) => obst[(Y(j) + Y(b)) / 2 + 1 | 0][(X(i) + X(a)) / 2 + 1 | 0] === 0;
+  for (let j = 0; j < R; j++) for (let i = 0; i < C; i++) for (const [a, b] of [[i + 1, j], [i, j + 1]])
+    if (a < C && b < R && !wallOpen(i, j, a, b) && deg[j][i] > 1 && deg[b][a] > 1 && rnd() < .12) join(i, j, a, b);
   const a0 = -1, a1 = -1;            // (no clearing inside: the boss and the mid-boss are in rooms past the two far exits)
   PORTAL = null;
   const dist = []; for (let j = 0; j < R; j++) dist.push(new Array(C).fill(-1));
@@ -2097,11 +2103,14 @@ function buildMaze(rnd) {             // 迷いの森: corridors 3 tiles wide be
     for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) if (a >= 0 && b >= 0 && a < C && b < R && dist[b][a] < 0 && linked(i, j, a, b)) { dist[b][a] = dist[j][i] + 1; q.push([a, b]); }
   }
   const best = null;
-  const ends = [];                     // the other dead ends get small treasure chests
+  const ends = [];                     // dead ends get small treasure chests: one in each third of the forest
   for (let j = 0; j < R; j++) for (let i = 0; i < C; i++)
     if (deg[j][i] === 1 && !(i === ei && j === ej) && !(j === 0 && (i === 2 || i === 8))) ends.push([dist[j][i], i, j]);
   ends.sort((p, q) => q[0] - p[0]);
-  CHEST_SPOTS = ends.slice(0, 3).map(([, i, j], k) => ({ x: (X(i) + 1.5) * TILE, y: (Y(j) + 1.5) * TILE + 4, wpn: k === 0 }));   // the farthest one holds a weapon
+  const picks = [];
+  for (let band = 0; band < 3; band++) { const inBand = ends.filter(([, i]) => (i * 3 / C | 0) === band), far = inBand.slice(0, Math.max(1, Math.ceil(inBand.length / 2))); if (far.length) picks.push(far[rnd() * far.length | 0]); }   // somewhere in the farther half of each third
+  for (const e of ends) if (picks.length < 3 && !picks.includes(e)) picks.push(e);
+  CHEST_SPOTS = picks.map(([, i, j]) => ({ x: (X(i) + 1.5) * TILE, y: (Y(j) + 1.5) * TILE + 4 }));
   return [X(ei) + 1, Y(ej) + 1];
 }
 function buildVillage(sc, S, paint) {  // houses, a road, villagers; trees all around
