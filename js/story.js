@@ -291,7 +291,7 @@ function cycleWeapon() {
   if (mode !== 'story' || safePlace() || performance.now() < (me.castUntil || 0)) return;
   const list = ownedWeapons(); if (list.length < 2) { toast('まだ持ちかえる武器がありません。ダンジョンの先にいる武器の番人を倒そう'); return; }
   const w = list[(list.indexOf(me.w) + 1) % list.length];
-  me.w = w;
+  me.w = w; me.equipAt = performance.now();   // (older snapshots from the host still say the old weapon for a moment)
   if (isHost) { const st = stats.get(me.slot); if (st && st.owned.has(w)) st.weapon = w; syncFromStats(); }
   else if (hostConn && hostConn.open) hostConn.send({ t: 'equip', w });
   toast(WEAPONS[w].name + 'に持ちかえた');

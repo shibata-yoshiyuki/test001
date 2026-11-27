@@ -66,7 +66,7 @@ function applyAll(ps) {
   const next = new Map();
   for (const p of ps) {
     if (p.slot === me.slot) {
-      if (p.life !== undefined) { me.life = p.life; me.lm = p.lm || LIFE_MAX; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; if (WEAPONS[p.w]) { me.w = p.w; me.ammo = p.am | 0; } me.fastUntil = performance.now() + (p.fs | 0); }
+      if (p.life !== undefined) { me.life = p.life; me.lm = p.lm || LIFE_MAX; me.down = !!p.down; me.inv = !!p.inv; me.ko = p.ko | 0; if (WEAPONS[p.w] && performance.now() - (me.equipAt || 0) > 800) { me.w = p.w; me.ammo = p.am | 0; }   /* just switched: ignore older news */ me.fastUntil = performance.now() + (p.fs | 0); }
       continue;
     }
     const key = 's' + p.slot, prev = others.get(key);

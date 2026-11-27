@@ -95,10 +95,7 @@ function cancelCast(slot, why) {
 // 祈りが途切れたときの表示（全員のブラウザで動く）
 function onCastX(d) {
   fx = fx.filter(f => !(f.kind === 'heal' && f.slot === d.slot));
-  if (d.slot === me.slot && me.castUntil) {
-    me.castUntil = 0; me.castId = null;
-    toast(d.why === 'hit' ? '攻撃を受けて、祈りが失敗した' : 'ボタンを離したので、祈りが途切れた');
-  }
+  if (d.slot === me.slot) { me.castUntil = 0; me.castId = null; }   // (no message: the circle just disappears)
 }
 // 子：自分でボタンを離した → 親に知らせる（親なら自分で取り消す）
 function releaseCast() {
@@ -115,7 +112,6 @@ function onHealFx(d) {
     if (p) for (let i = 0; i < 6; i++) sparks.push({ x: (p === me ? me.x : p.dx) + (Math.random() - .5) * 14, y: (p === me ? me.y : p.dy) - 12 - Math.random() * 14, t: now + i * 40, col: '255, 160, 200' });
   }
   if (healed.includes(me.slot)) toast(d.slot === me.slot ? 'いやしの杖：' + healed.length + '人のライフが1回復した' : slotName(d.slot) + 'のいやしの杖でライフが1回復した');
-  else if (d.slot === me.slot) toast('いやしの杖：回復が必要な仲間が丸の中にいなかった');
 }
 // ナイフ・刀：前の扇形に当たったか
 function resolveMelee(att, W, now) {
@@ -401,7 +397,7 @@ function onHit(d) {
     const kx = me.x + d.kx * 10, ky = me.y + d.ky * 10;      // knockback
     if (canStand(kx, ky)) { me.x = kx; me.y = ky; }
     target = null;
-    if (d.life <= 0) { me.down = true; toast((d.by ? slotName(d.by) : '敵') + 'にやられた！ ' + (mode !== 'pvp' ? 'ウェーブを倒しきると復活します' : '3秒後に復活します')); }
+    if (d.life <= 0) { me.down = true; toast((d.by ? slotName(d.by) : '敵') + 'にやられた！ ' + (mode === 'pvp' ? '3秒後に復活します' : mode === 'story' && AREA_KIND[curScene] ? '仲間が生きていれば8秒後に復活します' : 'ウェーブを倒しきると復活します')); }
   } else if (victim) {
     victim.life = d.life; victim.inv = true;
     if (d.life <= 0) { victim.down = true; toast(!d.by ? slotName(d.victim) + 'がやられた！' : d.by === me.slot ? slotName(d.victim) + 'を倒した！' : slotName(d.by) + 'が' + slotName(d.victim) + 'を倒した'); }
