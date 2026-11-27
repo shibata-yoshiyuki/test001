@@ -114,7 +114,7 @@ function joinRoom() {
     }, JOIN_TIMEOUT_MS);
     conn.on('open', () => lobbyMsg('部屋の親とつながりました。準備中…'));
     conn.on('data', d => {
-      if (d.sc && hostConn === conn && ['shot', 'atk', 'pick', 'ehit', 'hit', 'bfx', 'respawn', 'heal'].includes(d.t) && d.sc !== curScene) return;   // news from another place
+      if (d.sc && hostConn === conn && ['shot', 'atk', 'pick', 'ehit', 'hit', 'bfx', 'respawn', 'heal', 'castx'].includes(d.t) && d.sc !== curScene) return;   // news from another place
       if (d.t === 'full') { clearTimeout(giveUp); clearTimeout(slowMsg); p.destroy(); busy(false); lobbyMsg('この部屋は満員です（最大4人）。', true); return; }
       if (d.t === 'version') {
         clearTimeout(giveUp); clearTimeout(slowMsg); p.destroy(); busy(false);
@@ -137,6 +137,7 @@ function joinRoom() {
       else if (d.t === 'respawn') onRespawn(d);
       else if (d.t === 'bfx') onBossFx(d);
       else if (d.t === 'heal') onHealFx(d);
+      else if (d.t === 'castx') onCastX(d);
       else if (d.t === 'sclear') onStoryClear(d);
       else if (d.t === 'note') toast(String(d.text));
       else if (d.t === 'warp') onWarp(d);

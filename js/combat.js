@@ -37,12 +37,13 @@ function fire(aimX, aimY, held) {
   const now = performance.now();
   const W = WEAPONS[me.w] || WEAPONS.knife;
   if (screen !== 'play' || !peer || me.down || now - me.lastShot < W.cd || now < (me.castUntil || 0)) return;
+  if (W.kind === 'heal' && held) return;            // the heal staff starts only on a new press
   if (aimX !== undefined) {
     const n = Math.hypot(aimX, aimY);
     if (n > 0.5) { me.aimX = aimX / n; me.aimY = aimY / n; me.dir = faceOf(aimX, aimY); }
   }
   me.lastShot = now; me.atkT = now;
-  if (W.kind === 'heal') { me.castUntil = now + W.cast; target = null; }   // praying: can't move for a while
+  if (W.kind === 'heal') { me.castUntil = now + W.cast; me.castId = me.slot + '-' + (shotSeq + 1) + '-' + (now | 0); target = null; }   // praying: keep the button down, stand still
   const a = { id: me.slot + '-' + (++shotSeq) + '-' + (now | 0), slot: me.slot, w: me.w, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, ax: me.aimX, ay: me.aimY };
   if (isHost) performAttack(a, null);
   else {
@@ -64,13 +65,14 @@ function performAttack(a, fromPeer) {
   attackFx(att);
   if (W.kind === 'melee') resolveMelee(att, W, now);
   else if (W.kind === 'slam') { const sc = SC; setTimeout(() => withMap(sc, () => resolveSlam(att, W)), W.delay); }
-  else if (W.kind === 'heal') { const sc = SC; st.castUntil = now + W.cast; setTimeout(() => withMap(sc, () => resolveHeal(att, W)), W.cast); }
+  else if (W.kind === 'heal') { const sc = SC; st.castUntil = now + W.cast; st.castId = att.id; setTimeout(() => withMap(sc, () => resolveHeal(att, W)), W.cast); }
   syncFromStats();
 }
 // いやしの杖：祈り終わったとき、丸の中で生きている仲間（自分も）をライフ1回復
 function resolveHeal(att, W) {
   const st = stats.get(att.slot);
-  if (!st || st.down) return;                       // knocked down while praying: no heal
+  if (!st || st.down || st.castId !== att.id) return;   // let go of the button, or got hit: the prayer failed
+  st.castId = null; st.castUntil = 0;
   const me_ = playerTargets().find(p => p.slot === att.slot); if (!me_) return;
   const healed = [];
   for (const p of alivePlayers()) {
@@ -82,8 +84,31 @@ function resolveHeal(att, W) {
   broadcast(m); if (SC === curScene) onHealFx(m);
   syncFromStats();
 }
+// 親：祈りが途切れた（ボタンを離した／攻撃を受けた）
+function cancelCast(slot, why) {
+  const st = stats.get(slot);
+  if (!st || !st.castId) return;
+  st.castId = null; st.castUntil = 0;
+  const m = { t: 'castx', slot, why };
+  broadcast(m); if (SC === curScene) onCastX(m);
+}
+// 祈りが途切れたときの表示（全員のブラウザで動く）
+function onCastX(d) {
+  fx = fx.filter(f => !(f.kind === 'heal' && f.slot === d.slot));
+  if (d.slot === me.slot && me.castUntil) {
+    me.castUntil = 0; me.castId = null;
+    toast(d.why === 'hit' ? '攻撃を受けて、祈りが失敗した' : 'ボタンを離したので、祈りが途切れた');
+  }
+}
+// 子：自分でボタンを離した → 親に知らせる（親なら自分で取り消す）
+function releaseCast() {
+  if (!me.castUntil) return;
+  if (isHost) withMap(curScene, () => cancelCast(me.slot, 'release'));
+  else { onCastX({ slot: me.slot, why: 'release' }); if (hostConn && hostConn.open) hostConn.send({ t: 'castx' }); }
+}
 // 回復したときの表示（全員のブラウザで動く）
 function onHealFx(d) {
+  if (d.slot === me.slot) { me.castUntil = 0; me.castId = null; }
   const now = performance.now(), healed = Array.isArray(d.healed) ? d.healed : [];
   for (const sl of healed) {
     const p = sl === me.slot ? me : otherBySlot(sl);
@@ -354,6 +379,7 @@ function damagePlayer(slot, kx, ky, by, shotId, now, keep) {
   const st = stats.get(slot);
   if (!st || st.down || now < st.invUntil) return false;
   st.life = Math.max(0, st.life - 1); st.invUntil = now + INV_MS;
+  if (st.castId) cancelCast(slot, 'hit');              // praying with the heal staff: a hit breaks it
   if (st.life === 0) {
     st.down = true;
     st.downUntil = mode !== 'pvp' ? Infinity : now + DOWN_MS;     // co-op / story: revive when the wave is cleared
@@ -371,6 +397,7 @@ function onHit(d) {
   if (victim) sparks.push({ x: victim === me ? me.x : victim.dx, y: (victim === me ? me.y : victim.dy) - 12, t: performance.now() });
   if (d.victim === me.slot) {
     me.life = d.life; me.inv = true;
+    if (me.castUntil) { me.castUntil = 0; me.castId = null; }   // (the host sends the 'failed' news too)
     const kx = me.x + d.kx * 10, ky = me.y + d.ky * 10;      // knockback
     if (canStand(kx, ky)) { me.x = kx; me.y = ky; }
     target = null;

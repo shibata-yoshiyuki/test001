@@ -18,7 +18,9 @@ addEventListener('keydown', e => {
   e.preventDefault(); me.held.delete(d); me.held.add(d);
 });
 addEventListener('keyup', e => { if (ATTACK_KEYS.has(e.code)) atkHeld = false; const d = KEYMAP[e.code]; if (d) me.held.delete(d); });
-addEventListener('blur', () => { me.held.clear(); atkHeld = false; });
+addEventListener('blur', () => { me.held.clear(); atkHeld = false; rmbHeld = false; });
+addEventListener('pointerup', e => { if (e.button === 2) rmbHeld = false; });   // PC: right button let go (holds the heal staff)
+let rmbHeld = false;
 {
   const b = $('atk');
   const on = e => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); b.classList.add('on'); atkHeld = true; fire(); };
@@ -74,7 +76,7 @@ $('zoom').addEventListener('click', () => {
 });
 cv.addEventListener('pointerdown', e => {
   if (screen === 'play' && e.pointerType === 'mouse' && e.button === 2) {   // PC: right click = shoot toward the cursor
-    e.preventDefault();
+    e.preventDefault(); rmbHeld = true;
     const g = toGame(e);
     fire(g.x + camX - me.x, g.y + camY - (me.y - 12));
     return;

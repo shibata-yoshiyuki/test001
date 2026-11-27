@@ -43,6 +43,7 @@ function onHostConnection(conn) {
       if (mode === 'story' && st && d.w === 'heal' && st.sc === 't1' && (st.cleared || 0) >= 3) st.owned.add('heal');
       return;
     }
+    if (d.t === 'castx') { const sst = stats.get(rec.slot); withMap((sst && sst.sc) || 'island', () => cancelCast(rec.slot, 'release')); return; }
     if (d.t === 'equip') {                      // story: switch to a weapon you own
       const st = stats.get(rec.slot);
       if (st && st.owned.has(String(d.w))) { st.weapon = String(d.w); syncFromStats(); }

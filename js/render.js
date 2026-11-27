@@ -182,6 +182,7 @@ function frame(now) {
     checkExits(prevX, prevY, now);
     camX = Math.round(me.x - VW / 2); camY = Math.round(me.y - 16 - VH / 2);
     if (atkHeld) fire(undefined, undefined, true);
+    if (me.castUntil && now < me.castUntil && !atkHeld && !rmbHeld) releaseCast();   // heal staff: let go too early = failed
     if (isHost) {                    // the host runs every place someone is in
       const places = new Set([curScene]);
       for (const sh of shots.values()) places.add(sh.sc || curScene);
@@ -212,7 +213,7 @@ function frame(now) {
       else if (inTown) { $('atk-name').textContent = talkTo === 'well' ? 'しらべる' : interact === 'talk' ? 'はなす' : '－'; $('atk-ammo').textContent = interact ? '' : '人に近づく'; }
       else {
         $('atk-name').textContent = (WEAPONS[me.w] || WEAPONS.knife).name;
-        $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : me.w === 'heal' ? (now < (me.castUntil || 0) ? '祈り中…' : '5秒で回復') : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
+        $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : me.w === 'heal' ? (now < (me.castUntil || 0) ? '祈り中…' : '4秒長押し') : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
       }
       $('swap').hidden = !(mode === 'story' && !inTown && save.weapons.length > 0);
     }
@@ -301,6 +302,7 @@ function frame(now) {
     }
     // melee arcs and hammer shockwaves
     fx = fx.filter(f => now - f.t < (f.kind === 'slam' ? WEAPONS[f.w].delay + 260 : f.kind === 'heal' ? WEAPONS[f.w].cast + 350 : 170));
+    if (me.castUntil && now >= me.castUntil + 1500) { me.castUntil = 0; me.castId = null; }   // (safety: no word from the host)
     for (const f of fx) {
       if (f.sc && f.sc !== curScene) continue;
       const W = WEAPONS[f.w], k = (now - f.t);
