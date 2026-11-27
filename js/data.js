@@ -21,7 +21,7 @@ const WEAPONS = {
   hammer: { name: '大ハンマー', icon: 'big_hammer',        kind: 'slam', radius: 50, delay: 260, cd: 1000, dmg: 3 },
   red:    { name: '赤い杖',     icon: 'red_magic_staff',   kind: 'shot', spd: 170, rng: 150, cd: 500, dmg: 0.5, spread: [-0.3, 0, 0.3], proj: 'orbR' },
   green:  { name: '緑の杖',     icon: 'green_magic_staff', kind: 'shot', spd: 125, rng: 260, cd: 450, dmg: 0.5, homing: true, proj: 'orbG' },
-  // いやしの杖：ボタンを4秒押し続けて祈る（その間は動けない）→ まわりの丸の中にいる仲間（自分も）をライフ1回復。
+  // いやしの杖：ボタンを押し続けてしばらく祈る（長さは cast）（その間は動けない）→ まわりの丸の中にいる仲間（自分も）をライフ1回復。
   // 途中でボタンを離すか、攻撃を受けると失敗。終わればすぐまた使える
   heal:   { name: 'いやしの杖', icon: 'heal_staff',        kind: 'heal', cast: 4000, radius: 56, cd: 300, dmg: 0 },
 };

@@ -220,7 +220,7 @@ function doInteract() {
     if (!save.talked) { save.talked = true; writeSave(); }
   } else if (talkTo.gift && !save.weapons.includes(talkTo.gift) && save.cleared >= 3) {   // a present (the heal staff)
     const w = talkTo.gift;
-    say([{ n: talkTo.n, t: talkTo.giftLine }], () => banner(WEAPONS[w].name + 'を手に入れた！<small>5秒祈ると、まわりの丸の中の仲間（自分も）をライフ1回復／「持ちかえ」かQキーで切りかえ</small>', 4500));
+    say([{ n: talkTo.n, t: talkTo.giftLine }], () => banner(WEAPONS[w].name + 'を手に入れた！<small>攻撃ボタンを長押ししてしばらく祈ると、まわりの丸の中の仲間（自分も）のライフが1回復／「持ちかえ」かQキーで切りかえ</small>', 4500));
     save.weapons.push(w); writeSave();
     if (isHost) { const st = stats.get(me.slot); if (st) st.owned.add(w); }
     else if (hostConn && hostConn.open) hostConn.send({ t: 'gift', w });

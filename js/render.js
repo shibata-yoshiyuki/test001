@@ -210,7 +210,7 @@ function frame(now) {
       else if (inTown) { $('atk-name').textContent = talkTo === 'well' ? 'しらべる' : interact === 'talk' ? 'はなす' : '－'; $('atk-ammo').textContent = interact ? '' : '人に近づく'; }
       else {
         $('atk-name').textContent = (WEAPONS[me.w] || WEAPONS.knife).name;
-        $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : me.w === 'heal' ? (now < (me.castUntil || 0) ? '祈り中…' : '4秒長押し') : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
+        $('atk-ammo').textContent = me.w === 'knife' ? '近くだけ' : me.w === 'heal' ? (now < (me.castUntil || 0) ? '祈り中…' : '長押しで祈る') : mode === 'story' ? 'ずっと使える' : 'のこり ' + me.ammo;
       }
       $('swap').hidden = !(mode === 'story' && !inTown && save.weapons.length > 0);
     }
