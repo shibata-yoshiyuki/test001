@@ -397,7 +397,12 @@ function onHit(d) {
     const kx = me.x + d.kx * 10, ky = me.y + d.ky * 10;      // knockback
     if (canStand(kx, ky)) { me.x = kx; me.y = ky; }
     target = null;
-    if (d.life <= 0) { me.down = true; toast((d.by ? slotName(d.by) : '敵') + 'にやられた！ ' + (mode === 'pvp' ? '3秒後に復活します' : mode === 'story' && AREA_KIND[curScene] ? '仲間が生きていれば8秒後に復活します' : 'ウェーブを倒しきると復活します')); }
+    if (d.life <= 0) { me.down = true; {
+      // what happens next: only say it when it will really happen (alone = everyone is down = the party is wiped out)
+      const mates = [...others.values()].some(o => !o.down && (mode !== 'story' || o.sc === curScene));
+      const next = mode === 'pvp' ? '3秒後に復活します' : !mates ? '' : mode === 'story' && AREA_KIND[curScene] ? '少しすると仲間の近くで復活します' : 'ウェーブを倒しきると復活します';
+      toast((d.by ? slotName(d.by) : '敵') + 'にやられた！' + (next ? ' ' + next : ''));
+    } }
   } else if (victim) {
     victim.life = d.life; victim.inv = true;
     if (d.life <= 0) { victim.down = true; toast(!d.by ? slotName(d.victim) + 'がやられた！' : d.by === me.slot ? slotName(d.victim) + 'を倒した！' : slotName(d.by) + 'が' + slotName(d.victim) + 'を倒した'); }

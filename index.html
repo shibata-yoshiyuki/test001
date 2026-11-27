@@ -114,7 +114,6 @@ button.chip { cursor: pointer; }
   background: rgba(214, 72, 64, .82); color: #fff; border: 3px solid rgba(255,255,255,.75);
   font: 1.05rem var(--display); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
 }
-.buff { color: #8ff0a4; }
 .swap { position: absolute; z-index: 2; right: calc(max(14px, env(safe-area-inset-right, 0px)) + 94px); bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
 .dialog {
   position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); bottom: calc(150px + env(safe-area-inset-bottom, 0px));
@@ -201,7 +200,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
     <div class="dlg-next">▼ タップ／スペースで次へ</div>
   </div>
   <div class="hud-bottom">
-    <span class="chip buff" id="buff" hidden></span>
     <label class="chip"><input type="checkbox" id="run"> 走る</label>
     <button class="chip" id="zoom">見え方：ふつう</button>
     <button class="chip" id="fs">全画面</button>
@@ -212,7 +210,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
 // The game's code lives in js/*.js, one file per topic (see README「プログラムの構成」).
-const VERSION = '2026-11-27b';         // bump on every release; host and guests must match (also refreshes the js files)
+const VERSION = '2026-11-27c';         // bump on every release; host and guests must match (also refreshes the js files)
 const FILES = ['core', 'data', 'story-data', 'world', 'lobby', 'net', 'combat', 'enemies', 'story', 'input', 'render', 'main'];   // load order matters
 for (const f of FILES) document.write('<script src="js/' + f + '.js?v=' + VERSION + '"><\/script>');
 </script>

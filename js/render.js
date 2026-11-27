@@ -195,9 +195,6 @@ function frame(now) {
       e.dx += (e.x - e.dx) * k; e.dy += (e.y - e.dy) * k;
     }
     $('atk').disabled = me.down;
-    const fastLeft = Math.ceil((me.fastUntil - now) / 1000);
-    const buffTxt = fastLeft > 0 ? 'はやい！ のこり' + fastLeft + '秒' : '';
-    if ($('buff').textContent !== buffTxt) { $('buff').textContent = buffTxt; $('buff').hidden = !buffTxt; }
     interact = null; talkTo = null;
     if (mode === 'story' && !dlgOpen) {
       let best = 30;
