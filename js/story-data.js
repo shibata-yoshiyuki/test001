@@ -39,7 +39,15 @@ const KING_NEXT = {                 // the king's hint about where to go next (a
   3: '草原の東の「ひだまり町」が、オークたちに襲われているらしい。何とかしてほしい。',
   4: '草原の南の「墓地」で、ガイコツ大将がさまよっているらしい。何とかしてほしい。',
   5: 'もりかげ村の古井戸の地下道が、北の魔王の城に続いているらしい。北の魔王を何とかしてほしい。',
-}   // enemy types per wave
+}
+// 王様のセリフ：次に行く場所のうわさ＋お願い（KING_NEXT）を1つだけ
+function kingLines(c) {
+  if (c >= LAST_CH) return [{ n: '王様', t: '北の魔王を倒してくれて、ありがとう！ そなたたちは国の英雄じゃ。' }];
+  return [{ n: '王様', t: KING_NEXT[c + 1] }];
+}
+const ENDING = [{ n: '王様', t: 'おお……北の魔王を倒してくれたのか！ 国に平和が戻ったぞ。' },
+                { n: '王様', t: 'そなたたちこそ、まことの英雄じゃ。またいつでも冒険に出てよいぞ！' }];
+const CH_WAVES = { 1: [[0], [0]], 2: [[0, 1], [1]], 3: [[1, 9], [9], [1, 9]], 4: [[1, 2], [2], [1, 2]], 5: [[2, 3], [1, 3], [2, 3]] };   // enemy types per wave
 const CH_BOSS = { 1: 0, 2: 1, 3: 9, 4: 2, 5: 4 };            // boss type per chapter
 const MID_FOR_CH = { 1: 5, 2: 6, 4: 7, 5: 8 };               // mid-boss type per chapter (the town has none)
 const CH_POOL = { 1: ['katana', 'axe'], 2: ['bow', 'red'], 4: ['hammer', 'green'], 5: ['bow', 'axe', 'katana', 'hammer', 'red', 'green'] };
@@ -145,4 +153,4 @@ const SCENES = {
   f3m: { w: 38, h: 30, seed: 3401, oseed: 3402, theme: 'grave', fth: .6, pT: .16, pTl: .04, pR: .08, lair: true, lairCenter: true },
   f3: { w: 56, h: 42, seed: 3301, oseed: 3302, theme: 'grave',  fth: .6,  pT: .14, pTl: .03,  pR: .07 },
   f4: { w: 56, h: 42, seed: 4401, oseed: 4402, theme: 'demon',  fth: .62, pT: .12, pTl: .015, pR: .05 },
-};// 王様のセリフ：次に行く場所のうわさ＋お願い（KING_NEXT）を1つだけ
+};
